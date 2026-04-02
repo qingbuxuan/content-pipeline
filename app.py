@@ -1,0 +1,228 @@
+# 内容生产流水线 - Render 部署版
+
+from flask import Flask, jsonify
+import os
+import json
+import glob
+from datetime import datetime
+import requests
+
+app = Flask(__name__)
+
+# 数据目录
+DATA_DIR = "/tmp/data"
+os.makedirs(DATA_DIR, exist_ok=True)
+
+def log(msg):
+    print(f"[{datetime.now()}] {msg}", flush=True)
+
+# ============ 节点函数 ============
+
+def node1_collector():
+    keywords = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感", "家庭", "婚姻", "父母", "养老", "中年", "老年", "血压", "血糖"]
+    
+    items = []
+    # 百度热榜
+    try:
+        r = requests.get("https://top.baidu.com/api/board/getBoard?boardId=realtime", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        items += [{"title": i["query"], "source": "百度"} for i in r.json()["data"]["content"][:20]]
+    except:
+        pass
+    
+    # 微博热榜
+    try:
+        r = requests.get("https://weibo.com/ajax/side/hotSearch", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+        items += [{"title": i["word"], "source": "微博"} for i in r.json()["data"]["realtime"][:20]]
+    except:
+        pass
+    
+    # 如果失败用模拟数据
+    if not items:
+        items = [
+            {"title": "中老年人如何科学养生？医生给出5条建议", "source": "mock"},
+            {"title": "老年人睡眠不好怎么办？专家支招", "source": "mock"},
+            {"title": "退休后如何保持身心健康", "source": "mock"},
+            {"title": "中年人必看：预防高血压的日常方法", "source": "mock"},
+            {"title": "中医养生：四季饮食调理指南", "source": "mock"},
+        ]
+        log("API不可用，使用模拟数据")
+    
+    # 计算相关度
+    for item in items:
+        item["score"] = sum(2 if kw in ["健康", "养生", "情感"] else 1 for kw in keywords if kw in item["title"])
+    
+    # 筛选排序
+    filtered = sorted([i for i in items if i["score"] > 0], key=lambda x: x["score"], reverse=True)[:10]
+    
+    with open(f"{DATA_DIR}/candidates.json", "w") as f:
+        json.dump({"date": str(datetime.now().date()), "items": filtered}, f)
+    
+    log(f"[1] 采集完成: {len(filtered)}条")
+    return filtered
+
+def node2_title():
+    try:
+        with open(f"{DATA_DIR}/candidates.json") as f:
+            items = json.load(f)["items"]
+        title = items[0]["title"] if items else "健康养生文章"
+    except:
+        title = "健康养生文章"
+    
+    best_title = f"医生不会告诉你的{title.split('？')[0]}真相，早知道早受益"
+    with open(f"{DATA_DIR}/title.json", "w") as f:
+        json.dump({"title": best_title}, f)
+    log(f"[2] 标题: {best_title}")
+    return best_title
+
+def node3_outline():
+    try:
+        with open(f"{DATA_DIR}/title.json") as f:
+            title = json.load(f)["title"]
+    except:
+        title = "健康养生文章"
+    
+    outline = {"title": title, "sections": ["引言", "问题现状", "科学解读", "实用建议", "注意事项", "结语"]}
+    with open(f"{DATA_DIR}/outline.json", "w") as f:
+        json.dump(outline, f)
+    log("[3] 大纲完成")
+    return outline
+
+def node4_article():
+    try:
+        with open(f"{DATA_DIR}/outline.json") as f:
+            outline = json.load(f)
+        title = outline["title"]
+    except:
+        title = "健康养生文章"
+    
+    article = f"""# {title}
+
+## 引言
+随着生活水平的提高，越来越多的中老年人开始关注健康养生问题。然而，很多人在日常生活中却存在着不少误区。
+
+## 问题现状
+调查显示，超过60%的中老年人在日常生活中存在着不同程度的健康误区。
+
+## 科学解读
+从医学角度来看，人体在进入中老年阶段后，各项机能都会发生不同程度的变化。
+
+## 实用建议
+1. **规律作息**：保证每天7-8小时的睡眠
+2. **合理饮食**：少油少盐，多吃蔬菜水果
+3. **适度运动**：每天30分钟以上中等强度运动
+4. **定期体检**：每年至少一次全面体检
+5. **心态平和**：保持乐观积极的心态
+
+## 注意事项
+- 不要盲目跟风
+- 出现不适及时就医
+- 用药遵医嘱
+
+## 结语
+健康是我们最宝贵的财富。希望今天的分享能帮助大家。
+
+---
+*本文由AI助手生成*
+"""
+    
+    with open(f"{DATA_DIR}/article.json", "w") as f:
+        json.dump({"title": title, "article": article, "word_count": len(article)}, f)
+    log(f"[4] 正文: {len(article)}字")
+    return article
+
+def node5_summary():
+    try:
+        with open(f"{DATA_DIR}/article.json") as f:
+            data = json.load(f)
+        summary = data["article"][:180] + "..."
+    except:
+        summary = "本文分享了健康养生知识和实用建议..."
+    
+    with open(f"{DATA_DIR}/summary.json", "w") as f:
+        json.dump({"summary": summary}, f)
+    log("[5] 摘要完成")
+    return summary
+
+def node6_publish():
+    appid = os.environ.get("WECHAT_APPID", "")
+    secret = os.environ.get("WECHAT_SECRET", "")
+    
+    if not appid or not secret:
+        log("[6] 公众号未配置，跳过")
+        return {"status": "skipped"}
+    
+    try:
+        # 获取token
+        r = requests.get(f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}", timeout=10)
+        token = r.json().get("access_token")
+        if not token:
+            log(f"[6] 获取token失败")
+            return {"status": "failed", "error": "no token"}
+        
+        # 读取文章
+        try:
+            with open(f"{DATA_DIR}/article.json") as f:
+                data = json.load(f)
+            title = data["title"]
+            article = data["article"]
+        except:
+            title = "健康养生文章"
+            article = "内容..."
+        
+        # 创建草稿
+        html = f"<div style='font-size:16px;line-height:1.8;'>{article.replace(chr(10), '<br/>')}</div>"
+        r = requests.post(
+            f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}",
+            json={"articles": [{"title": title, "author": "AI助手", "content": html}]},
+            timeout=30
+        )
+        result = r.json()
+        
+        if "media_id" in result:
+            log(f"[6] 发布成功!")
+            return {"status": "success", "media_id": result["media_id"]}
+        else:
+            log(f"[6] 发布失败: {result}")
+            return {"status": "failed", "error": str(result)}
+    except Exception as e:
+        log(f"[6] 异常: {e}")
+        return {"status": "error", "error": str(e)}
+
+# ============ HTTP 路由 ============
+
+@app.route("/")
+def index():
+    return "内容生产流水线已启动！"
+
+@app.route("/health")
+def health():
+    return "OK"
+
+@app.route("/trigger", methods=["GET", "POST"])
+def trigger():
+    log("="*50)
+    log("流水线启动")
+    log("="*50)
+    
+    try:
+        node1_collector()
+        node2_title()
+        node3_outline()
+        node4_article()
+        node5_summary()
+        result = node6_publish()
+        
+        log("="*50)
+        log("流水线完成")
+        log("="*50)
+        
+        return jsonify({"success": True, "result": result})
+    except Exception as e:
+        log(f"错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)})
+
+if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
