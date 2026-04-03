@@ -410,15 +410,22 @@ def node6_send():
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
             title = json.load(f)["title"]
         with open(f"{DATA_DIR}/article.json", encoding="utf-8") as f:
-            article = json.load(f)["article"]
-            source = json.load(f).get("source", "网络")
+            article_data = json.load(f)
+            article = article_data.get("article", "")
+            source = article_data.get("source", "网络")
         with open(f"{DATA_DIR}/summary.json", encoding="utf-8") as f:
             data = json.load(f)
             summary = data.get("summary", "")
             cover_prompt = data.get("cover_prompt", "")
             cover_url = data.get("cover_url", "")
-    except:
-        title, article, summary, cover_url = "健康养生", "内容", "", ""
+    except Exception as e:
+        log(f"[6] 读取数据失败: {e}")
+        title = "健康养生文章"
+        article = "内容"
+        source = "网络"
+        summary = ""
+        cover_url = ""
+        cover_prompt = ""
     
     content = f"""📊 **来源：** {source}热榜
 
