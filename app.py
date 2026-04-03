@@ -35,7 +35,7 @@ def send_to_wechat(title, content):
         log(f"[推送] 发送失败: {e}")
         return {"code": -1, "msg": str(e)}
 
-def call_deepseek(prompt, system_prompt="你是一个有用的助手"):
+def call_deepseek(prompt, system_prompt="你是一个有用的助手", temperature=0.7):
     """调用 DeepSeek API"""
     try:
         headers = {
@@ -48,10 +48,10 @@ def call_deepseek(prompt, system_prompt="你是一个有用的助手"):
                 {"role": "system", "content": system_prompt},
                 {"role": "user", "content": prompt}
             ],
-            "temperature": 0.8,
-            "max_tokens": 500
+            "temperature": temperature,
+            "max_tokens": 1500
         }
-        resp = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=60)
+        resp = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=120)
         result = resp.json()
         
         if "choices" in result and len(result["choices"]) > 0:
@@ -72,6 +72,108 @@ def score_item(title):
     if "？" in title or "?" in title:
         score += 1
     return score
+
+# ========== 三把钩子提示词 ==========
+
+THREE_HOOKS_SYSTEM = """你是一位顶级微信公众号爆款文章写作大师，擅长用"三把钩子"写作法创作高转发、高点赞的爆款文章。
+
+三把钩子写作法：
+1. 第一把钩子：谁会在看第一眼觉得"这说的是我"？→ 解决标题和开头，用具体场景戳痛点
+2. 第二把钩子：我凭什么让别人相信？→ 解决信任感，用真实案例+底层逻辑
+3. 第三把钩子：看完后别人能带走什么？→ 解决收藏转发，用具体步骤+金句
+
+风格要求：
+- 语言接地气，像在跟朋友聊天
+- 善用具体场景和细节
+- 有温度，有共鸣，不说教
+- 结尾要有让人想转发的金句"""
+
+THREE_HOOKS_TITLE_PROMPT = """## 任务
+根据以下热榜话题，用三把钩子法生成5个爆款标题，并选出最优的一个。
+
+## 热榜话题
+{hot_topics}
+
+## 要求
+1. 标题要符合微信公众号爆款风格
+2. 具有强吸引力，能瞬间抓住读者眼球
+3. 要有"这说的是我"的感觉
+4. 最终标题不超过30个中文字符
+
+## 三把钩子思考
+第一把钩子：写给哪种具体的人？
+- 不要写"中年人"，写"50岁、退休金3000、孙子要上兴趣班、医保卡不敢刷"的人
+- 找准那个最痛的瞬间：凌晨惊醒、朋友圈攀比、被邻居炫耀刺激
+
+第二把钩子：核心金句是什么？
+- 一句话说透本质
+- 让人想截图转发
+
+第三把钩子：读者能带走什么？
+- 一个方法/一句安慰/一个答案
+
+## 输出格式
+候选标题（5个）：
+1. xxx
+2. xxx
+3. xxx
+4. xxx
+5. xxx
+
+【最终标题】：xxx"""
+
+THREE_HOOKS_OUTLINE_PROMPT = """## 任务
+根据以下主题，用三把钩子法生成一篇文章大纲。
+
+## 文章主题
+标题：{title}
+来源：{source}热榜
+
+## 三把钩子详细展开
+
+### 第一把钩子：谁会觉得"这说的是我"？
+请具体描述：
+1. 这篇文章写给哪种人？（越具体越好：年龄、职业、生活状态、经济情况）
+2. 他现在最痛的问题是什么？
+3. 哪个日常瞬间会让这个问题爆发？（半夜惊醒、刷朋友圈、被@、聚会时...）
+4. 读完文章，他能带走什么？（一个方法/一句安慰/一个答案）
+
+### 第二把钩子：凭什么让人相信？
+请具体描述：
+1. 文章最核心的那句话是什么？（金句，一句话说完）
+2. 有没有一个真实案例能证明？（化名、年龄、经历、说过的话）
+3. 这句话背后的原理是什么？（用"其实..."开头）
+4. 有没有反面例子能对比？
+
+### 第三把钩子：看完能带走什么？
+请具体描述：
+1. 第一步做什么？第二步？第三步？（越具体越好）
+2. 作者自己踩过什么坑？
+3. 一句话收尾金句（让人想转发）
+4. 结尾抛什么问题引发评论？
+
+## 输出格式
+用以下格式输出大纲：
+
+【目标读者】
+- 人群描述：xxx
+- 痛点瞬间：xxx
+- 带走收获：xxx
+
+【核心金句】
+xxx
+
+【文章结构】
+- 引言：xxx
+- 第一部分：xxx（含案例+金句）
+- 第二部分：xxx（含步骤+方法）
+- 第三部分：xxx（含反思+共鸣）
+- 结尾：xxx（金句+互动问题）
+
+【小标题】（3-5个，用吸引人的方式命名）
+"""
+
+# ========== 节点函数 ==========
 
 def node1_collector():
     """采集三大平台热榜"""
@@ -144,7 +246,7 @@ def node1_collector():
     return top5
 
 def node2_title():
-    """生成标题 - 使用 DeepSeek"""
+    """生成标题 - 使用三把钩子法"""
     try:
         with open(f"{DATA_DIR}/candidates.json", encoding="utf-8") as f:
             items = json.load(f)["items"]
@@ -153,51 +255,43 @@ def node2_title():
         hot_topics = "中老年人如何科学养生？\n老年人睡眠不好怎么办？\n退休后如何保持身心健康"
         items = [{"title": "中老年人如何科学养生？", "source": "默认"}]
     
-    log("[2] 使用DeepSeek生成标题...")
+    log("[2] 使用三把钩子法生成标题...")
     
-    # DeepSeek 提示词
-    system_prompt = """你是一位超厉害的微信公众号爆款标题制造大师，拥有深厚的文字功底和敏锐的热点洞察力。擅长创作吸引眼球的标题。"""
-    
-    user_prompt = f"""## 任务
-从以下热榜话题中，筛选出与"中年、中老年健康养生、养老、情感"相关的内容，生成5个微信公众号爆款标题。
-
-## 热榜话题
-{hot_topics}
-
-## 要求
-1. 标题要符合微信公众号风格
-2. 具有吸引力，能抓住读者眼球
-3. 可以结合多个话题或延伸话题
-4. 最终输出最优的一个标题
-
-## 输出格式
-先列出5个候选标题，然后标注"最终标题："后面跟最优的那个
-
-注意：最终标题不要超过30个中文字符！"""
-
-    # 调用 DeepSeek
-    result = call_deepseek(user_prompt, system_prompt)
+    prompt = THREE_HOOKS_TITLE_PROMPT.format(hot_topics=hot_topics)
+    result = call_deepseek(prompt, THREE_HOOKS_SYSTEM, temperature=0.8)
     
     if result:
-        log(f"[2] DeepSeek返回:\n{result}")
+        log(f"[2] DeepSeek返回:\n{result[:500]}...")
         
         # 提取最终标题
         lines = result.split("\n")
         final_title = None
         for line in lines:
-            if "最终标题" in line or "【最终】" in line or "★" in line:
-                # 提取标题
-                title = line.split("：")[-1].split("】")[-1].strip()
+            if "最终标题" in line or "【最终标题】" in line:
+                title = line.split("】")[-1].strip()
+                if not title:
+                    parts = line.split("：")
+                    if len(parts) > 1:
+                        title = parts[-1].strip()
                 if title and len(title) <= 35:
                     final_title = title
                     break
         
-        # 如果没找到最终标题标记，取最后一行
+        # 如果没找到，尝试其他标记
         if not final_title:
-            for line in reversed(lines):
+            for line in lines:
+                if "★" in line or "⭐" in line or "最优" in line:
+                    title = line.replace("★", "").replace("⭐", "").replace("最优", "").strip()
+                    if title and len(title) <= 35:
+                        final_title = title
+                        break
+        
+        # 如果还没找到，取第一个看起来像标题的行
+        if not final_title:
+            for line in lines:
                 line = line.strip()
-                if line and len(line) > 5:
-                    final_title = line.strip("★※【】\"\"''")
+                if line and len(line) > 5 and not line.startswith("候选") and "标题" not in line[:5]:
+                    final_title = line.strip("0123456789.、、 ")
                     if len(final_title) <= 35:
                         break
         
@@ -211,7 +305,7 @@ def node2_title():
             log(f"[2] ✅ 最终标题: {final_title}")
             return final_title
     
-    # 备用方案：模板生成
+    # 备用方案
     log("[2] DeepSeek失败，使用模板")
     topic = items[0]["title"] if items else "健康养生"
     final_title = f"医生不会告诉你的{topic}真相"
@@ -224,11 +318,47 @@ def node2_title():
     return final_title
 
 def node3_outline():
-    """生成大纲"""
-    outline = "引言 → 问题现状 → 科学解读 → 实用建议 → 注意事项 → 结语"
+    """生成大纲 - 使用三把钩子法"""
+    try:
+        with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
+            title_data = json.load(f)
+            title = title_data["title"]
+        with open(f"{DATA_DIR}/candidates.json", encoding="utf-8") as f:
+            source = json.load(f)["items"][0].get("source", "网络")
+    except:
+        title = "健康养生文章"
+        source = "网络"
+    
+    log("[3] 使用三把钩子法生成大纲...")
+    
+    prompt = THREE_HOOKS_OUTLINE_PROMPT.format(title=title, source=source)
+    result = call_deepseek(prompt, THREE_HOOKS_SYSTEM, temperature=0.7)
+    
+    if result:
+        log(f"[3] 大纲生成成功，长度: {len(result)}字")
+        with open(f"{DATA_DIR}/outline.json", "w", encoding="utf-8") as f:
+            json.dump({"outline": result, "title": title}, f, ensure_ascii=False)
+        return result
+    
+    # 备用大纲
+    log("[3] DeepSeek失败，使用模板")
+    outline = f"""【目标读者】
+- 人群：50-70岁中老年人
+- 痛点：担心健康、不知道怎么养生
+- 收获：科学养生方法
+
+【核心金句】
+健康是最宝贵的财富，预防大于治疗。
+
+【文章结构】
+- 引言：从{source}热榜话题引入
+- 第一部分：问题现状
+- 第二部分：科学解读
+- 第三部分：实用建议
+- 结尾：总结+互动问题"""
+    
     with open(f"{DATA_DIR}/outline.json", "w", encoding="utf-8") as f:
-        json.dump({"outline": outline}, f, ensure_ascii=False)
-    log("[3] 大纲完成")
+        json.dump({"outline": outline, "title": title}, f, ensure_ascii=False)
     return outline
 
 def node4_article():
@@ -236,54 +366,76 @@ def node4_article():
     try:
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
             title = json.load(f)["title"]
+        with open(f"{DATA_DIR}/outline.json", encoding="utf-8") as f:
+            outline_data = json.load(f)
+            outline = outline_data.get("outline", "")
         with open(f"{DATA_DIR}/candidates.json", encoding="utf-8") as f:
             source = json.load(f)["items"][0].get("source", "网络")
     except:
         title = "健康养生文章"
+        outline = ""
         source = "网络"
     
-    article = f"""【{title}】
+    log("[4] 使用DeepSeek生成正文...")
+    
+    article_prompt = f"""## 任务
+根据以下大纲，扩写成一篇完整的微信公众号文章。
+
+## 标题
+{title}
+
+## 大纲
+{outline[:1500] if outline else "基础大纲"}
+
+## 要求
+1. 用三把钩子写作法
+2. 语言接地气，像跟朋友聊天
+3. 开头要有强吸引力，让人想继续读
+4. 中间有具体案例和细节
+5. 结尾有金句和互动问题
+6. 字数800-1200字
+7. 格式用emoji小标题分段
+
+## 输出
+直接输出完整文章内容"""
+
+    result = call_deepseek(article_prompt, THREE_HOOKS_SYSTEM, temperature=0.8)
+    
+    if result:
+        article = result
+        log(f"[4] 正文生成成功: {len(article)}字")
+    else:
+        # 备用正文
+        log("[4] DeepSeek失败，使用模板")
+        article = f"""【{title}】
 
 最近在{source}上看到这个话题，今天来和大家聊聊。
 
 ■ 引言
-随着生活水平的提高，越来越多的人开始关注健康养生问题。但网上信息鱼龙混杂，到底哪些是真哪些是假？
+随着生活水平的提高，越来越多的人开始关注健康养生问题。
 
 ■ 问题现状
-调查显示，超过60%的中老年人存在健康误区：
-- 盲目购买保健品
-- 道听途说跟风养生
-- 忽视定期体检
+调查显示，超过60%的中老年人存在健康误区。
 
 ■ 科学解读
-专家表示，健康养生需要科学方法：
-1. 每个人体质不同，养生方式也要因人而异
-2. 没有"万能保健品"，健康需要综合管理
-3. 预防大于治疗，定期体检是关键
+健康养生需要科学方法，预防大于治疗。
 
 ■ 实用建议
-1. 规律作息：早睡早起，保证7-8小时睡眠
-2. 合理膳食：少油少盐，多吃蔬菜水果
-3. 适度运动：每天30分钟中等强度运动
-4. 定期体检：每年至少一次全面体检
-5. 心态平和：保持乐观积极的生活态度
-
-■ 注意事项
-- 不要盲目购买三无保健品
-- 有身体不适及时就医
-- 科学养生才是正道
+1. 规律作息
+2. 合理膳食
+3. 适度运动
+4. 定期体检
+5. 心态平和
 
 ■ 结语
-健康是最宝贵的财富。希望今天的分享对大家有帮助！
+健康是最宝贵的财富！
 
 ——
-*本文由AI自动生成 | 数据来源：{source}热榜
-可直接复制到公众号发布*
-"""
+*本文由AI自动生成 | 数据来源：{source}热榜*"""
 
     with open(f"{DATA_DIR}/article.json", "w", encoding="utf-8") as f:
         json.dump({"title": title, "article": article, "source": source}, f, ensure_ascii=False)
-    log(f"[4] 正文生成: {len(article)}字 | 来源: {source}")
+    log(f"[4] 正文完成: {len(article)}字")
     return article
 
 def node5_summary():
@@ -291,7 +443,7 @@ def node5_summary():
     try:
         with open(f"{DATA_DIR}/article.json", encoding="utf-8") as f:
             data = json.load(f)
-        summary = data["article"][:150] + "..."
+        summary = data["article"][:200] + "..."
     except:
         summary = "健康养生文章..."
     with open(f"{DATA_DIR}/summary.json", "w", encoding="utf-8") as f:
@@ -311,7 +463,7 @@ def node6_send():
         
         result = send_to_wechat(
             title=f"📝 新文章：{title}",
-            content=f"**来源：** {source}热榜\n\n**标题：** {title}\n\n**正文：**\n{article}\n\n━━━━━━━━━━━━━━━\n👆 以上是今日生成的文章内容\n请复制到公众号后台发布"
+            content=f"📊 **来源：** {source}热榜\n\n🏷️ **标题：** {title}\n\n📄 **正文：**\n{article}\n\n━━━━━━━━━━━━━━━\n👆 以上是今日生成的文章内容\n请复制到公众号后台发布"
         )
         
         if result.get("code") == 0:
@@ -326,7 +478,7 @@ def node6_send():
 
 @app.route("/")
 def index():
-    return "✅ 内容生产流水线<br>三源热榜 + DeepSeek标题生成<br>每天自动推送到微信"
+    return "✅ 内容生产流水线<br>三源热榜 + 三把钩子写作法<br>DeepSeek生成爆款文章"
 
 @app.route("/trigger")
 def trigger():
@@ -357,19 +509,9 @@ def trigger():
 def test():
     result = send_to_wechat(
         title="🧪 测试消息",
-        content="这是一条测试消息，如果收到这条消息，说明推送功能正常！\n\n三源热榜 + DeepSeek标题已就绪！"
+        content="测试消息\n\n三源热榜 + 三把钩子写作法 + DeepSeek已就绪！"
     )
     return jsonify({"success": True, "result": result})
-
-@app.route("/test_deepseek")
-def test_deepseek():
-    """测试 DeepSeek API"""
-    log("[测试] 调用DeepSeek...")
-    result = call_deepseek("请生成一个关于健康养生的微信公众号标题，20字以内")
-    if result:
-        return jsonify({"success": True, "result": result})
-    else:
-        return jsonify({"success": False, "error": "API调用失败"})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
