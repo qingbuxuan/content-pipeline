@@ -19,14 +19,12 @@ def log(msg):
 
 def node1_collector():
     keywords = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感", "家庭", "婚姻", "父母", "养老", "中年", "老年", "血压", "血糖"]
-    
     items = []
     try:
         r = requests.get("https://top.baidu.com/api/board/getBoard?boardId=realtime", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         items += [{"title": i["query"], "source": "百度"} for i in r.json()["data"]["content"][:20]]
     except:
         pass
-    
     try:
         r = requests.get("https://weibo.com/ajax/side/hotSearch", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         items += [{"title": i["word"], "source": "微博"} for i in r.json()["data"]["realtime"][:20]]
@@ -45,7 +43,6 @@ def node1_collector():
     
     for item in items:
         item["score"] = sum(2 if kw in ["健康", "养生", "情感"] else 1 for kw in keywords if kw in item["title"])
-    
     filtered = sorted([i for i in items if i["score"] > 0], key=lambda x: x["score"], reverse=True)[:10]
     
     with open(f"{DATA_DIR}/candidates.json", "w") as f:
@@ -74,7 +71,6 @@ def node3_outline():
             title = json.load(f)["title"]
     except:
         title = "健康养生文章"
-    
     outline = {"title": title, "sections": ["引言", "问题现状", "科学解读", "实用建议", "注意事项", "结语"]}
     with open(f"{DATA_DIR}/outline.json", "w") as f:
         json.dump(outline, f)
@@ -140,7 +136,7 @@ def node6_publish():
     appid = os.environ.get("WECHAT_APPID", "")
     secret = os.environ.get("WECHAT_SECRET", "")
     
-    log(f"[6] 环境变量: appid={appid[:10]}..." if appid else "[6] appid为空")
+    log(f"[6] appid={appid[:10]}..." if appid else "[6] appid为空")
     if not appid or not secret:
         log("[6] 公众号未配置，跳过")
         return {"status": "skipped"}
@@ -149,37 +145,35 @@ def node6_publish():
         # 获取token
         token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
         r = requests.get(token_url, timeout=10)
-        response = r.json()
-        token = response.get("access_token")
+        token = r.json().get("access_token")
         
         if not token:
-            errcode = response.get("errcode", "unknown")
-            log(f"[6] 获取token失败: errcode={errcode}")
-            return {"status": "failed", "error": f"errcode: {errcode}"}
+            errcode = r.json().get("errcode")
+            log(f"[6] token失败: {errcode}")
+            return {"status": "failed", "error": f"token: {errcode}"}
+        log(f"[6] token成功!")
         
-        log(f"[6] token获取成功!")
-        
-        # 创建空白图片作为封面
-        log("[6] 创建封面图...")
-        # 1x1 透明 PNG 图片的 base64
-        blank_png = base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        # 上传永久封面图片
+        log("[6] 上传永久封面...")
+        # 创建简单的PNG图片
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
         )
         
-        # 上传临时素材获取thumb_media_id
-        upload_url = f"https://api.weixin.qq.com/cgi-bin/media/upload?access_token={token}&type=image"
-        files = {"media": ("cover.png", blank_png, "image/png")}
+        # 使用永久素材接口
+        upload_url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type=thumb"
+        files = {"media": ("cover.png", png_data, "image/png")}
         r = requests.post(upload_url, files=files, timeout=30)
         upload_result = r.json()
-        log(f"[6] 上传响应: {upload_result}")
+        log(f"[6] 上传结果: {upload_result}")
         
         thumb_media_id = upload_result.get("media_id")
         
         if not thumb_media_id:
-            log(f"[6] 上传封面失败: {upload_result}")
+            log(f"[6] 上传失败: {upload_result}")
             return {"status": "failed", "error": "upload failed"}
         
-        log(f"[6] 封面上传成功: {thumb_media_id}")
+        log(f"[6] 永久封面ID: {thumb_media_id}")
         
         # 读取文章
         try:
@@ -209,7 +203,7 @@ def node6_publish():
         
         r = requests.post(draft_url, json={"articles": [article_data]}, timeout=30)
         result = r.json()
-        log(f"[6] 草稿响应: {result}")
+        log(f"[6] 草稿结果: {result}")
         
         if "media_id" in result:
             log(f"[6] 发布成功!")
