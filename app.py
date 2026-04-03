@@ -10,6 +10,10 @@ PORT = int(os.environ.get("PORT", 10000))
 DATA_DIR = "/tmp/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
+from flask import Flask, jsonify, redirect
+import os
+
+
 # 新增：暴露static文件夹，让微信校验域名
 app.static_folder = 'static'
 app.add_url_rule('/<path:filename>', endpoint='static', view_func=app.send_static_file)
@@ -90,6 +94,9 @@ def node6_publish():
         log(f"[6] 异常：{e}")
         return {"status": "error", "error": str(e)}
 
+app = Flask(__name__)
+PORT = int(os.environ.get("PORT", 10000))
+
 @app.route("/")
 def index():
     return "服务运行正常 ✅"
@@ -102,7 +109,7 @@ def trigger():
     node4_article()
     node5_summary()
     result = node6_publish()
-    return jsonify({"success": True, "result": result})
+    return redirect("https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit&action=edit&type=10&lang=zh_CN", code=302)
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
