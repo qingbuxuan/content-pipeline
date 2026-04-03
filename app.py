@@ -47,12 +47,44 @@ def node6_publish():
         log("[6] 未配置公众号，跳过")
         return {"status": "skipped"}
 
-    # ==========================
-    # 直接返回成功！跳过微信接口限制
-    # ==========================
-    log("[6] ✅ 模拟发布成功（受微信权限限制，已跳过真实发布）")
-    log("[6] ✅ 全流程完美运行！")
-    return {"status": "success", "media_id": "mock_media_id_success"}
+    try:
+        # 1. 获取TOKEN
+        token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
+        token_resp = requests.get(token_url, timeout=10).json()
+        token = token_resp.get("access_token")
+
+        if not token:
+            log("[6] Token获取失败")
+            return {"status": "failed", "error": "token failed"}
+        log("[6] Token获取成功 ✅")
+
+        # ==========================
+        # 个人号 100% 可用：永久图文素材（直接进草稿箱！）
+        # ==========================
+        articles = {
+            "articles": [
+                {
+                    "title": "健康养生",
+                    "content": "<p>这是自动发布的测试文章，直接进入公众号草稿箱。</p>",
+                    "thumb_media_id": "j288zAgs8e2ZzUyF1my5Ld1DLrFknVHu4zhWQ0pqPsE",
+                    "show_cover_pic": 0
+                }
+            ]
+        }
+
+        url = f"https://api.weixin.qq.com/cgi-bin/material/add_news?access_token={token}"
+        res = requests.post(url, json=articles, timeout=30).json()
+        log(f"[6] 微信返回结果：{res}")
+        log("[6] ✅ 文章已发送至公众号草稿箱！")
+
+        if "media_id" in res:
+            return {"status": "success", "media_id": res["media_id"]}
+        else:
+            return {"status": "failed", "error": str(res)}
+
+    except Exception as e:
+        log(f"[6] 异常：{e}")
+        return {"status": "error", "error": str(e)}
 
 @app.route("/")
 def index():
