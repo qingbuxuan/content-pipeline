@@ -178,18 +178,31 @@ def node6_publish():
                 data = json.load(f)
             title = data["title"]
             article = data["article"]
+            summary = data["article"][:100]
         except:
             title = "健康养生文章"
             article = "内容..."
+            summary = "健康养生文章"
         
-        # 创建草稿
+        # 创建草稿（不传thumb_media_id）
         html = f"<div style='font-size:16px;line-height:1.8;'>{article.replace(chr(10), '<br/>')}</div>"
         draft_url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
         log(f"[6] 创建草稿...")
         
+        # 不传thumb_media_id字段
+        article_data = {
+            "title": title,
+            "author": "AI助手",
+            "digest": summary,
+            "content": html,
+            "content_source_url": "",
+            "need_open_comment": 1,
+            "only_fans_can_comment": 0
+        }
+        
         r = requests.post(
             draft_url,
-            json={"articles": [{"title": title, "author": "AI助手", "content": html}]},
+            json={"articles": [article_data]},
             timeout=30
         )
         result = r.json()
