@@ -271,6 +271,12 @@ def trigger():
     log("流水线启动")
     log("="*50)
     
+    # 清空旧缓存
+    import shutil
+    if os.path.exists(DATA_DIR):
+        shutil.rmtree(DATA_DIR)
+    os.makedirs(DATA_DIR, exist_ok=True)
+    
     try:
         node1_collector()
         node2_title()
