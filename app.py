@@ -422,7 +422,6 @@ def node6_publish():
         return {"status": "skipped"}
     
     try:
-        # 获取token
         token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
         r = requests.get(token_url, timeout=10)
         token_resp = r.json()
@@ -435,72 +434,53 @@ def node6_publish():
             return {"status": "failed", "error": f"token: {errcode} - {errmsg}"}
         log(f"[6] token成功!")
         
-        # 上传永久封面图片
         log("[6] 上传永久封面...")
         png_data = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
         )
-        
         upload_url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type=thumb"
         files = {"media": ("cover.png", png_data, "image/png")}
         r = requests.post(upload_url, files=files, timeout=30)
         upload_result = r.json()
-        log(f"[6] 上传结果: {upload_result}")
-        
         thumb_media_id = upload_result.get("media_id")
         
         if not thumb_media_id:
-            log(f"[6] 上传失败: {upload_result}")
-            return {"status": "failed", "error": f"upload failed: {upload_result}"}
+            log(f"[6] 上传封面失败: {upload_result}")
+            return {"status": "failed", "error": f"上传封面失败"}
         
-        log(f"[6] 永久封面ID: {thumb_media_id}")
-        
-        # 读取文章
+        log(f"[6] 封面ID: {thumb_media_id}")
+
+        # ==============================
+        # 🔴 关键修复：强制标题 ≤ 60 字节
+        # ==============================
         try:
             with open(f"{DATA_DIR}/article.json", encoding="utf-8") as f:
                 data = json.load(f)
-            title = truncate_title(data["title"], 60)  # 公众号标题最多64字节，留余量
+            title = data["title"]
+
+            # 强制截断到 60 字节（绝对不会超公众号 64 限制）
+            title_bytes = title.encode("utf-8")
+            if len(title_bytes) > 60:
+                title = title_bytes[:60].decode("utf-8", errors="ignore")
+                log(f"[6] 标题超长，已自动截断: {title}")
+
             article = data["article"]
-            # 读取智能摘要
             with open(f"{DATA_DIR}/summary.json", encoding="utf-8") as f:
                 summary = json.load(f)["summary"]
         except:
-            title = random.choice(BACKUP_TITLES)
-            article = "# 健康养生指南\n\n本文为中老年人提供了科学的养生建议，帮助大家保持身心健康。"
-            summary = "本文为中老年人提供了全面的健康养生解决方案，内容实用、科学、易懂。"
+            title = "中老年人科学养生指南"
+            article = "健康养生知识分享"
+            summary = "科学实用的养生建议"
+
+        log(f"[6] 最终发送标题: {title}  字节数={len(title.encode())}")
         
-        log(f"[6] 发布标题: {title} ({len(title.encode('utf-8'))}字节)")
-        
-        # 格式化HTML（优化排版）
-        html_parts = []
-        for line in article.split("\n"):
-            if line.startswith("# "):  # 一级标题
-                html_parts.append(f"<h1 style='font-size:20px;font-weight:bold;margin:20px 0;'>{line[2:]}</h1>")
-            elif line.startswith("## "):  # 二级标题
-                html_parts.append(f"<h2 style='font-size:18px;font-weight:bold;margin:15px 0;'>{line[3:]}</h2>")
-            elif line.startswith("### "):  # 三级标题
-                html_parts.append(f"<h3 style='font-size:16px;font-weight:bold;margin:10px 0;'>{line[4:]}</h3>")
-            elif line.startswith("- "):  # 列表项
-                html_parts.append(f"<p style='margin:5px 0;padding-left:15px;'>• {line[2:]}</p>")
-            elif line.strip():  # 普通段落
-                html_parts.append(f"<p style='margin:10px 0;line-height:1.8;'>{line}</p>")
-            else:  # 空行
-                html_parts.append("<br/>")
-        
-        html = "".join(html_parts)
-        # 公众号HTML样式优化
-        html = f"""<div style='font-size:16px;line-height:1.8;color:#333;max-width:800px;margin:0 auto;padding:20px;'>
-            {html}
-            <p style='margin-top:30px;color:#999;font-size:14px;'>*本文由AI助手生成，仅供参考，具体请结合专业人士建议*</p>
-        </div>"""
-        
-        # 创建草稿
+        html = f"<div style='font-size:16px;line-height:1.8;'>{article.replace(chr(10), '<br/>')}</div>"
         draft_url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
         
         article_data = {
             "title": title,
-            "author": "AI养生助手",
-            "digest": summary[:120],  # 公众号摘要最多120字
+            "author": "AI助手",
+            "digest": summary[:100],
             "content": html,
             "thumb_media_id": thumb_media_id,
             "need_open_comment": 1,
@@ -512,15 +492,14 @@ def node6_publish():
         log(f"[6] 草稿结果: {result}")
         
         if "media_id" in result:
-            log(f"[6] 草稿创建成功! media_id={result['media_id']}")
+            log(f"[6] ✅ 草稿发布成功！")
             return {"status": "success", "media_id": result["media_id"]}
         else:
-            errmsg = result.get("errmsg", "unknown")
-            log(f"[6] 草稿创建失败: {errmsg}")
+            log(f"[6] ❌ 草稿发布失败: {result}")
             return {"status": "failed", "error": str(result)}
             
     except Exception as e:
-        log(f"[6] 发布异常: {e}")
+        log(f"[6] 异常: {e}")
         import traceback
         traceback.print_exc()
         return {"status": "error", "error": str(e)}
