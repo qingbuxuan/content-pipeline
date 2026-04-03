@@ -1,49 +1,94 @@
-from flask import Flask, jsonify, redirect, render_template_string
-import urllib.parse
+from flask import Flask, jsonify
 import os
+import json
+import base64
+from datetime import datetime
+import requests
 
 app = Flask(__name__)
 PORT = int(os.environ.get("PORT", 10000))
+DATA_DIR = "/tmp/data"
+os.makedirs(DATA_DIR, exist_ok=True)
 
-# 自动生成文章内容
-TITLE = "健康养生"
-CONTENT = """
-<p>1. 早睡早起，保持充足睡眠</p>
-<p>2. 饮食清淡，少油少盐</p>
-<p>3. 适度运动，增强免疫力</p>
-<p>这是自动化生成的文章，直接进入公众号草稿箱。</p>
-"""
+def log(msg):
+    print(f"[{datetime.now()}] {msg}", flush=True)
 
-# 🔥 核心页面：自动调用微信JS，打开草稿并填充内容
-@app.route('/trigger')
-def trigger():
-    import urllib.parse
-    # 拼接带内容的公众号编辑链接
-    title = urllib.parse.quote("健康养生")
-    content = urllib.parse.quote("""
-<p>1. 早睡早起，保持充足睡眠</p>
-<p>2. 饮食清淡，少油少盐</p>
-<p>3. 适度运动，增强免疫力</p>
-<p>这是自动化生成的文章，直接进入公众号草稿箱。</p>
-    """)
-    # URL编码标题和内容（避免特殊字符报错）
-    encoded_title = urllib.parse.quote(title)
-    encoded_content = urllib.parse.quote(content)
-    # 公众号草稿编辑页地址
-    jump_url = f"https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit&action=edit&type=10&lang=zh_CN&title={title}&content={content}"
-    # 服务器端302重定向（自动跳转，无页面停留）
-    return redirect(jump_url, code=302)
+def node6_publish():
+    appid = os.environ.get("WECHAT_APPID", "")
+    secret = os.environ.get("WECHAT_SECRET", "")
+
+    if not appid or not secret:
+        log("[6] 未配置公众号，跳过")
+        return {"status": "skipped"}
+
+    try:
+        # 获取token
+        token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
+        token_resp = requests.get(token_url, timeout=10).json()
+        log(f"[6] token响应: {token_resp}")
+        token = token_resp.get("access_token")
+
+        if not token:
+            return {"status": "failed", "error": f"token失败: {token_resp}"}
+
+        log("[6] token成功!")
+
+        # 上传封面图（临时素材）
+        png_data = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAASwAAAEsCAYAAAB5fY51AAAABmJLR0QA/wD/AP+gvaeTAAAACXBIWXMAAAsTAAALEwEAmpwYAAAAB3RJTUUH6AQDCgcKpMuGIgAAAB1pVFh0Q29tbWVudAAAAAAAQ3JlYXRlZCB3aXRoIEdJTVBkLmUHAAAAFklEQVR42mNk+M9Qz0AEYBxVQF8BAARuAAFMBSZRAAAAAElFTkSuQmCC"
+        )
+        upload_url = f"https://api.weixin.qq.com/cgi-bin/media/upload?access_token={token}&type=image"
+        files = {"media": ("cover.png", png_data, "image/png")}
+        media_resp = requests.post(upload_url, files=files, timeout=30).json()
+        log(f"[6] 封面上传: {media_resp}")
+        thumb_media_id = media_resp.get("media_id")
+
+        if not thumb_media_id:
+            return {"status": "failed", "error": f"封面上传失败: {media_resp}"}
+
+        # 使用 add_news 接口（订阅号支持）
+        news_url = f"https://api.weixin.qq.com/cgi-bin/material/add_news?access_token={token}"
+        payload = {
+            "articles": [
+                {
+                    "title": "健康养生",
+                    "thumb_media_id": thumb_media_id,
+                    "author": "AI",
+                    "digest": "健康养生知识分享",
+                    "show_cover_pic": 1,
+                    "content": "<p>健康养生，从今天开始。</p>",
+                    "content_source_url": ""
+                }
+            ]
+        }
+
+        resp = requests.post(news_url, json=payload, timeout=30).json()
+        log(f"[6] add_news结果: {resp}")
+
+        if "media_id" in resp:
+            log("[6] ✅ 发布成功！")
+            return {"status": "success", "media_id": resp["media_id"]}
+        else:
+            return {"status": "failed", "error": str(resp)}
+
+    except Exception as e:
+        log(f"[6] 异常: {e}")
+        return {"status": "error", "error": str(e)}
 
 @app.route("/")
 def index():
-    return "✅ 服务运行正常 | 访问 /trigger 自动创建公众号草稿"
+    return "服务运行正常"
 
-# 新增：处理微信域名校验文件（无冲突版本）
-@app.route('/MP_verify_<string:filename>.txt')
-def verify_file(filename):
-    # 把下载的校验文件内容直接写在这里（替换成你实际下载的文件内容）
-    # 例如：如果文件内容是 "abc123456789"，就 return "abc123456789"
-    return "rbycC54eWHXTLryw"
+@app.route("/trigger")
+def trigger():
+    log("="*40)
+    log("流水线启动")
+    log("="*40)
+    result = node6_publish()
+    log("="*40)
+    log("流水线完成")
+    log("="*40)
+    return jsonify({"success": True, "result": result})
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
