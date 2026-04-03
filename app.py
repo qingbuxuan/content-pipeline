@@ -10,6 +10,10 @@ PORT = int(os.environ.get("PORT", 10000))
 DATA_DIR = "/tmp/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# 新增：暴露static文件夹，让微信校验域名
+app.static_folder = 'static'
+app.add_url_rule('/<path:filename>', endpoint='static', view_func=app.send_static_file)
+
 def log(msg):
     print(f"[{datetime.now()}] {msg}", flush=True)
 
