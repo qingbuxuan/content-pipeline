@@ -16,32 +16,19 @@ CONTENT = """
 # 🔥 核心页面：自动调用微信JS，打开草稿并填充内容
 @app.route('/trigger')
 def trigger():
-    html = '''
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <title>自动创建公众号草稿</title>
-    </head>
-    <body>
-        <h3>正在自动跳转到公众号草稿箱...</h3>
-        <script>
-            // 微信官方图文编辑页（自动创建新草稿）
-            const title = "{{ title }}";
-            const content = "{{ content }}";
-            
-            // 拼接带内容的官方编辑链接（直接填充进草稿）
-            const url = "https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit&action=edit&type=10&lang=zh_CN"
-                      + "&title=" + encodeURIComponent(title)
-                      + "&content=" + encodeURIComponent(content);
-            
-            // 直接跳转 = 直接进入草稿编辑页
-            window.location.href = url;
-        </script>
-    </body>
-    </html>
-    '''
-    return render_template_string(html, title=TITLE, content=CONTENT)
+    import urllib.parse
+    # 拼接带内容的公众号编辑链接
+    title = urllib.parse.quote("健康养生")
+    content = urllib.parse.quote("""
+<p>1. 早睡早起，保持充足睡眠</p>
+<p>2. 饮食清淡，少油少盐</p>
+<p>3. 适度运动，增强免疫力</p>
+<p>这是自动化生成的文章，直接进入公众号草稿箱。</p>
+    """)
+    # 公众号草稿编辑页地址
+    jump_url = f"https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit&action=edit&type=10&lang=zh_CN&title={title}&content={content}"
+    # 服务器端302重定向（自动跳转，无页面停留）
+    return redirect(jump_url, code=302)
 
 @app.route("/")
 def index():
