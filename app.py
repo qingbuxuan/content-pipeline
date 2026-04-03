@@ -92,7 +92,7 @@ def generate_cover_image(prompt):
             },
             "parameters": {
                 "style": "<auto>",
-                "size": "1024*576",  # 16:9
+                "size": "1280*720",  # 16:9 横屏
                 "n": 1
             }
         }
