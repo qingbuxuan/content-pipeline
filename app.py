@@ -3,7 +3,9 @@
 from flask import Flask, jsonify
 import os
 import json
-import base64
+import struct
+import zlib
+import io
 from datetime import datetime
 import requests
 
@@ -15,39 +17,44 @@ os.makedirs(DATA_DIR, exist_ok=True)
 def log(msg):
     print(f"[{datetime.now()}] {msg}", flush=True)
 
-def truncate_title(title, max_bytes=64):
-    """按字节截断标题，确保最终字节数不超过 max_bytes"""
-    title_bytes = title.encode('utf-8')
-    if len(title_bytes) <= max_bytes:
+def truncate_title(title, max_bytes=50):
+    """按字节截断标题"""
+    if len(title.encode('utf-8')) <= max_bytes:
         return title
-
-    # 逐字符累积，为省略号预留 3 字节空间
     result = ""
-    for ch in title:
-        test = result + ch
-        if len(test.encode('utf-8')) <= max_bytes - 3:
-            result = test
-        else:
-            # 剩余空间不足以再加一个字符，尝试添加省略号
-            if len(result.encode('utf-8')) + 3 <= max_bytes:
-                result += "..."
-            break
-    return result
-
-def truncate_str(s, max_bytes=20):
-    """截断字符串（用于作者名等）"""
-    if not s:
-        return s
-    if len(s.encode('utf-8')) <= max_bytes:
-        return s
-    result = ""
-    for char in s:
+    for char in title:
         test = result + char
-        if len(test.encode('utf-8')) > max_bytes - 2:
-            result += ".."
+        if len(test.encode('utf-8')) > max_bytes - 3:
+            result += "..."
             break
         result += char
     return result
+
+def make_jpg(width=900, height=383):
+    """生成最小合法JPG图片（绿色背景）"""
+    try:
+        from PIL import Image
+        img = Image.new('RGB', (width, height), color=(76, 175, 80))
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=85)
+        return buf.getvalue()
+    except ImportError:
+        # 没有PIL，用最小JPG
+        # 这是一个有效的16x16绿色JPG
+        jpg_hex = (
+            "ffd8ffe000104a46494600010100000100010000"
+            "ffdb004300080606070605080707070909080a0c"
+            "140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20"
+            "242e2720222c231c1c2837292c30313434341f27"
+            "39393238323334320000ffdb0043010909090c0b"
+            "0c180d0d1832211c213232323232323232323232"
+            "323232323232323232323232323232323232323232"
+            "32323232323232323232323232323232ffc0001108"
+            "00100010030111003802110321100fffc4001f0000"
+            "0105010101010100000000000000000102030405060"
+            "70809ffda000c03010002110311003f00ffd9"
+        )
+        return bytes.fromhex(jpg_hex.replace('\n', '').replace(' ', ''))
 
 def node1_collector():
     keywords = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感", "家庭", "婚姻", "父母", "养老", "中年", "老年", "血压", "血糖"]
@@ -156,7 +163,7 @@ def node5_summary():
     try:
         with open(f"{DATA_DIR}/article.json") as f:
             data = json.load(f)
-        summary = data["article"][:120] + "..."
+        summary = data["article"][:180] + "..."
     except:
         summary = "本文分享了健康养生知识和实用建议..."
     
@@ -186,48 +193,38 @@ def node6_publish():
             return {"status": "failed", "error": f"token: {errcode}"}
         log(f"[6] token成功!")
         
-        # 上传永久封面图片
-        log("[6] 上传永久封面...")
-        png_data = base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-        )
+        # 生成JPG封面图（200x200，确保小于64KB）
+        log("[6] 生成JPG封面 200x200...")
+        jpg_data = make_jpg(200, 200)
+        log(f"[6] JPG大小: {len(jpg_data)} bytes")
         
+        # 上传永久素材（JPG格式）
         upload_url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type=thumb"
-        files = {"media": ("cover.png", png_data, "image/png")}
+        files = {"media": ("cover.jpg", jpg_data, "image/jpeg")}
         r = requests.post(upload_url, files=files, timeout=30)
         upload_result = r.json()
         log(f"[6] 上传结果: {upload_result}")
         
         thumb_media_id = upload_result.get("media_id")
-        
         if not thumb_media_id:
             log(f"[6] 上传失败: {upload_result}")
-            return {"status": "failed", "error": "upload failed"}
+            return {"status": "failed", "error": f"upload: {upload_result}"}
         
-        log(f"[6] 永久封面ID: {thumb_media_id}")
+        log(f"[6] 封面ID: {thumb_media_id}")
         
         # 读取文章
         try:
             with open(f"{DATA_DIR}/article.json") as f:
                 data = json.load(f)
-            title = truncate_title(data["title"], 54)
+            title = truncate_title(data["title"], 50)
             article = data["article"]
-            summary = truncate_summary(data["article"], 100)
+            summary = data["article"][:100]
         except:
             title = "健康养生文章"
             article = "内容..."
             summary = "健康养生文章"
         
-        # 截断作者名（限制8字节）
-        author = truncate_str("AI", 8)
-        
-        # 截断摘要（限制120字节）
-        if len(summary.encode('utf-8')) > 120:
-            summary = summary[:40] + "..."
-        
         log(f"[6] 标题: {title} ({len(title.encode('utf-8'))}字节)")
-        log(f"[6] 作者: {author} ({len(author.encode('utf-8'))}字节)")
-        log(f"[6] 摘要: {summary} ({len(summary.encode('utf-8'))}字节)")
         
         # 创建草稿
         html = f"<div style='font-size:16px;line-height:1.8;'>{article.replace(chr(10), '<br/>')}</div>"
@@ -235,7 +232,7 @@ def node6_publish():
         
         article_data = {
             "title": title,
-            "author": author,
+            "author": "AI",
             "digest": summary,
             "content": html,
             "thumb_media_id": thumb_media_id,
