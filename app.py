@@ -1,4 +1,5 @@
-from flask import Flask, jsonify, render_template_string
+from flask import Flask, jsonify, redirect, render_template_string
+import urllib.parse
 import os
 
 app = Flask(__name__)
@@ -25,6 +26,9 @@ def trigger():
 <p>3. 适度运动，增强免疫力</p>
 <p>这是自动化生成的文章，直接进入公众号草稿箱。</p>
     """)
+    # URL编码标题和内容（避免特殊字符报错）
+    encoded_title = urllib.parse.quote(title)
+    encoded_content = urllib.parse.quote(content)
     # 公众号草稿编辑页地址
     jump_url = f"https://mp.weixin.qq.com/cgi-bin/appmsg?t=media/appmsg_edit&action=edit&type=10&lang=zh_CN&title={title}&content={content}"
     # 服务器端302重定向（自动跳转，无页面停留）
