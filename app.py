@@ -16,7 +16,7 @@ def log(msg):
     print(f"[{datetime.now()}] {msg}", flush=True)
 
 def truncate_title(title, max_bytes=64):
-"""按字节截断标题，确保最终字节数不超过 max_bytes"""
+    """按字节截断标题，确保最终字节数不超过 max_bytes"""
     title_bytes = title.encode('utf-8')
     if len(title_bytes) <= max_bytes:
         return title
