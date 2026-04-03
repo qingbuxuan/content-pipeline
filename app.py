@@ -98,20 +98,20 @@ def node4_article():
     article = f"""# {title}
 
 ## 引言
-随着生活水平的提高，越来越多的中老年人开始关注健康养生问题。然而，很多人在日常生活中却存在着不少误区。
+随着生活水平的提高，越来越多的中老年人开始关注健康养生问题。
 
 ## 问题现状
-调查显示，超过60%的中老年人在日常生活中存在着不同程度的健康误区。
+调查显示，超过60%的中老年人存在健康误区。
 
 ## 科学解读
-从医学角度来看，人体在进入中老年阶段后，各项机能都会发生不同程度的变化。
+从医学角度来看，人体在进入中老年阶段后，各项机能都会发生变化。
 
 ## 实用建议
-1. **规律作息**：保证每天7-8小时的睡眠
-2. **合理饮食**：少油少盐，多吃蔬菜水果
-3. **适度运动**：每天30分钟以上中等强度运动
-4. **定期体检**：每年至少一次全面体检
-5. **心态平和**：保持乐观积极的心态
+1. 规律作息：保证每天7-8小时的睡眠
+2. 合理饮食：少油少盐，多吃蔬菜水果
+3. 适度运动：每天30分钟以上中等强度运动
+4. 定期体检：每年至少一次全面体检
+5. 心态平和：保持乐观积极的心态
 
 ## 注意事项
 - 不要盲目跟风
@@ -119,7 +119,7 @@ def node4_article():
 - 用药遵医嘱
 
 ## 结语
-健康是我们最宝贵的财富。希望今天的分享能帮助大家。
+健康是最宝贵的财富。希望今天的分享能帮助大家。
 
 ---
 *本文由AI助手生成*
@@ -147,17 +147,30 @@ def node6_publish():
     appid = os.environ.get("WECHAT_APPID", "")
     secret = os.environ.get("WECHAT_SECRET", "")
     
+    log(f"[6] 环境变量: appid={appid[:10]}..." if appid else "[6] appid为空")
+    
     if not appid or not secret:
         log("[6] 公众号未配置，跳过")
         return {"status": "skipped"}
     
     try:
         # 获取token
-        r = requests.get(f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}", timeout=10)
-        token = r.json().get("access_token")
+        token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
+        log(f"[6] 请求微信API...")
+        
+        r = requests.get(token_url, timeout=10)
+        response = r.json()
+        log(f"[6] 微信响应: {response}")
+        
+        token = response.get("access_token")
+        
         if not token:
-            log(f"[6] 获取token失败")
-            return {"status": "failed", "error": "no token"}
+            errcode = response.get("errcode", "unknown")
+            errmsg = response.get("errmsg", "unknown")
+            log(f"[6] 获取token失败: errcode={errcode}, errmsg={errmsg}")
+            return {"status": "failed", "error": f"errcode: {errcode}"}
+        
+        log(f"[6] token获取成功!")
         
         # 读取文章
         try:
@@ -171,12 +184,16 @@ def node6_publish():
         
         # 创建草稿
         html = f"<div style='font-size:16px;line-height:1.8;'>{article.replace(chr(10), '<br/>')}</div>"
+        draft_url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
+        log(f"[6] 创建草稿...")
+        
         r = requests.post(
-            f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}",
+            draft_url,
             json={"articles": [{"title": title, "author": "AI助手", "content": html}]},
             timeout=30
         )
         result = r.json()
+        log(f"[6] 草稿响应: {result}")
         
         if "media_id" in result:
             log(f"[6] 发布成功!")
@@ -186,6 +203,8 @@ def node6_publish():
             return {"status": "failed", "error": str(result)}
     except Exception as e:
         log(f"[6] 异常: {e}")
+        import traceback
+        traceback.print_exc()
         return {"status": "error", "error": str(e)}
 
 # ============ HTTP 路由 ============
