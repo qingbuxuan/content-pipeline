@@ -188,24 +188,6 @@ def node6_publish():
             return {"status": "failed", "error": f"token: {errcode}"}
         log(f"[6] token成功!")
         
-        # 生成并上传封面图（头条900x383）
-        log("[6] 生成封面图 900x383...")
-        png_data = make_png(900, 383, 76, 175, 80)
-        log(f"[6] 图片大小: {len(png_data)} bytes")
-        
-        upload_url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type=thumb"
-        files = {"media": ("cover.png", png_data, "image/png")}
-        r = requests.post(upload_url, files=files, timeout=30)
-        upload_result = r.json()
-        log(f"[6] 上传结果: {upload_result}")
-        
-        thumb_media_id = upload_result.get("media_id")
-        if not thumb_media_id:
-            log(f"[6] 上传失败: {upload_result}")
-            return {"status": "failed", "error": f"upload: {upload_result}"}
-        
-        log(f"[6] 封面ID: {thumb_media_id}")
-        
         # 读取文章
         try:
             with open(f"{DATA_DIR}/article.json") as f:
@@ -220,7 +202,7 @@ def node6_publish():
         
         log(f"[6] 标题: {title} ({len(title.encode('utf-8'))}字节)")
         
-        # 创建草稿
+        # 创建草稿（不传thumb_media_id，测试是否可行）
         html = f"<div style='font-size:16px;line-height:1.8;'>{article.replace(chr(10), '<br/>')}</div>"
         draft_url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
         
@@ -229,7 +211,6 @@ def node6_publish():
             "author": "AI",
             "digest": summary,
             "content": html,
-            "thumb_media_id": thumb_media_id,
             "need_open_comment": 1,
             "only_fans_can_comment": 0
         }
