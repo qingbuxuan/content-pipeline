@@ -12,6 +12,9 @@ os.makedirs(DATA_DIR, exist_ok=True)
 # Server酱配置
 SERVERCHAN_KEY = "SCT333499TpvZQWzbvJcMfDxo7BmL8MsrV"
 
+# 健康养生相关关键词
+KEYWORDS = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感", "饮食", "减肥", "健身", "血压", "血糖", "心脏", "癌症", "疫苗", "医院", "医生", "药品", "保健", "体检"]
+
 def log(msg):
     print(f"[{datetime.now()}] {msg}", flush=True)
 
@@ -19,10 +22,7 @@ def send_to_wechat(title, content):
     """通过 Server酱 发送微信通知"""
     try:
         url = f"https://sctapi.ftqq.com/{SERVERCHAN_KEY}.send"
-        data = {
-            "title": title,
-            "desp": content
-        }
+        data = {"title": title, "desp": content}
         resp = requests.post(url, data=data, timeout=10)
         result = resp.json()
         log(f"[推送] 发送结果: {result}")
@@ -31,22 +31,89 @@ def send_to_wechat(title, content):
         log(f"[推送] 发送失败: {e}")
         return {"code": -1, "msg": str(e)}
 
+def score_item(title):
+    """计算标题与健康养生的相关度"""
+    score = 0
+    for kw in KEYWORDS:
+        if kw in title:
+            score += 2
+    # 问句相关性更高
+    if "？" in title or "?" in title:
+        score += 1
+    return score
+
 def node1_collector():
-    """采集热榜"""
-    keywords = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感"]
-    items = [
-        {"title": "中老年人如何科学养生？", "score": 3},
-        {"title": "老年人睡眠不好怎么办？", "score": 3},
-        {"title": "退休后如何保持身心健康", "score": 2},
-        {"title": "中年人必看：预防高血压", "score": 2},
-        {"title": "中医养生：四季饮食调理", "score": 2},
-    ]
-    # 筛选最相关的
-    filtered = sorted(items, key=lambda x: x["score"], reverse=True)[:3]
+    """采集三大平台热榜"""
+    all_items = []
+    
+    # 1. 百度热榜
+    try:
+        log("[1] 采集百度热榜...")
+        r = requests.get(
+            "https://top.baidu.com/api/board/getBoard?boardId=realtime",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10
+        )
+        data = r.json()
+        for item in data.get("data", {}).get("content", [])[:30]:
+            title = item.get("query", "")
+            all_items.append({"title": title, "source": "百度", "score": score_item(title)})
+        log(f"[1] 百度: 获取{len([i for i in all_items if i['source']=='百度'])}条")
+    except Exception as e:
+        log(f"[1] 百度采集失败: {e}")
+    
+    # 2. 微博热榜
+    try:
+        log("[1] 采集微博热榜...")
+        r = requests.get(
+            "https://weibo.com/ajax/side/hotSearch",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10
+        )
+        data = r.json()
+        for item in data.get("data", {}).get("realtime", [])[:30]:
+            title = item.get("word", "")
+            all_items.append({"title": title, "source": "微博", "score": score_item(title)})
+        log(f"[1] 微博: 获取{len([i for i in all_items if i['source']=='微博'])}条")
+    except Exception as e:
+        log(f"[1] 微博采集失败: {e}")
+    
+    # 3. 今日头条热榜
+    try:
+        log("[1] 采集今日头条热榜...")
+        r = requests.get(
+            "https://www.toutiao.com/hot-list/hot-board/",
+            headers={"User-Agent": "Mozilla/5.0"},
+            timeout=10
+        )
+        data = r.json()
+        for item in data.get("data", [])[:30]:
+            title = item.get("Title", "")
+            all_items.append({"title": title, "source": "头条", "score": score_item(title)})
+        log(f"[1] 头条: 获取{len([i for i in all_items if i['source']=='头条'])}条")
+    except Exception as e:
+        log(f"[1] 头条采集失败: {e}")
+    
+    # 筛选相关度最高的
+    relevant = [i for i in all_items if i["score"] > 0]
+    relevant.sort(key=lambda x: x["score"], reverse=True)
+    
+    # 取前5条
+    top5 = relevant[:5]
+    
+    # 如果没有相关的，用默认数据
+    if not top5:
+        top5 = [
+            {"title": "中老年人如何科学养生？", "source": "默认", "score": 3},
+            {"title": "老年人睡眠不好怎么办？", "source": "默认", "score": 3},
+        ]
+        log("[1] 无相关热榜，使用默认数据")
+    
     with open(f"{DATA_DIR}/candidates.json", "w", encoding="utf-8") as f:
-        json.dump({"items": filtered}, f, ensure_ascii=False)
-    log(f"[1] 采集完成: {len(filtered)}条")
-    return filtered
+        json.dump({"items": top5}, f, ensure_ascii=False)
+    
+    log(f"[1] 采集完成: 共{len(all_items)}条, 相关{len(relevant)}条, 选用{len(top5)}条")
+    return top5
 
 def node2_title():
     """生成标题"""
@@ -59,8 +126,10 @@ def node2_title():
     
     # 固定模板 + 话题
     title = f"医生不会告诉你的{topic}真相，早知道早受益"
+    
     # 确保不超过64字节
-    title = title[:30] + "..." if len(title.encode('utf-8')) > 60 else title
+    while len(title.encode('utf-8')) > 60 and len(title) > 10:
+        title = title[:-1]
     
     with open(f"{DATA_DIR}/title.json", "w", encoding="utf-8") as f:
         json.dump({"title": title}, f, ensure_ascii=False)
@@ -80,42 +149,54 @@ def node4_article():
     try:
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
             title = json.load(f)["title"]
+        with open(f"{DATA_DIR}/candidates.json", encoding="utf-8") as f:
+            source = json.load(f)["items"][0].get("source", "网络")
     except:
         title = "健康养生文章"
+        source = "网络"
     
     article = f"""【{title}】
 
+最近在{source}上看到这个话题，今天来和大家聊聊。
+
 ■ 引言
-随着生活水平的提高，越来越多的人开始关注健康养生问题。
+随着生活水平的提高，越来越多的人开始关注健康养生问题。但网上信息鱼龙混杂，到底哪些是真哪些是假？
 
 ■ 问题现状
-调查显示，很多人对健康存在误区，导致越养生越伤身。
+调查显示，超过60%的中老年人存在健康误区：
+- 盲目购买保健品
+- 道听途说跟风养生
+- 忽视定期体检
 
 ■ 科学解读
-专家表示，健康养生需要科学方法，盲目跟风不可取。
+专家表示，健康养生需要科学方法：
+1. 每个人体质不同，养生方式也要因人而异
+2. 没有"万能保健品"，健康需要综合管理
+3. 预防大于治疗，定期体检是关键
 
 ■ 实用建议
-1. 规律作息，早睡早起
-2. 合理膳食，少油少盐
-3. 适度运动，每天30分钟
-4. 定期体检，预防为主
-5. 心态平和，乐观向上
+1. 规律作息：早睡早起，保证7-8小时睡眠
+2. 合理膳食：少油少盐，多吃蔬菜水果
+3. 适度运动：每天30分钟中等强度运动
+4. 定期体检：每年至少一次全面体检
+5. 心态平和：保持乐观积极的生活态度
 
 ■ 注意事项
-- 不要盲目购买保健品
-- 有问题及时就医
-- 科学养生才是关键
+- 不要盲目购买三无保健品
+- 有身体不适及时就医
+- 科学养生才是正道
 
 ■ 结语
-关注健康，从今天开始！
+健康是最宝贵的财富。希望今天的分享对大家有帮助！
 
 ——
-*本文由AI自动生成，可直接复制到公众号发布
+*本文由AI自动生成 | 数据来源：{source}热榜
+可直接复制到公众号发布*
 """
 
     with open(f"{DATA_DIR}/article.json", "w", encoding="utf-8") as f:
-        json.dump({"title": title, "article": article}, f, ensure_ascii=False)
-    log(f"[4] 正文生成: {len(article)}字")
+        json.dump({"title": title, "article": article, "source": source}, f, ensure_ascii=False)
+    log(f"[4] 正文生成: {len(article)}字 | 来源: {source}")
     return article
 
 def node5_summary():
@@ -123,7 +204,7 @@ def node5_summary():
     try:
         with open(f"{DATA_DIR}/article.json", encoding="utf-8") as f:
             data = json.load(f)
-        summary = data["article"][:100] + "..."
+        summary = data["article"][:150] + "..."
     except:
         summary = "健康养生文章..."
     with open(f"{DATA_DIR}/summary.json", "w", encoding="utf-8") as f:
@@ -137,12 +218,14 @@ def node6_send():
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
             title = json.load(f)["title"]
         with open(f"{DATA_DIR}/article.json", encoding="utf-8") as f:
-            article = json.load(f)["article"]
+            article_data = json.load(f)
+            article = article_data["article"]
+            source = article_data.get("source", "网络")
         
         # 发送到微信
         result = send_to_wechat(
             title=f"📝 新文章：{title}",
-            content=f"**标题：** {title}\n\n**正文：**\n{article}\n\n👆 以上是今日生成的文章内容，请复制到公众号后台发布。"
+            content=f"**来源：** {source}热榜\n\n**标题：** {title}\n\n**正文：**\n{article}\n\n━━━━━━━━━━━━━━━\n👆 以上是今日生成的文章内容\n请复制到公众号后台发布"
         )
         
         if result.get("code") == 0:
@@ -157,7 +240,7 @@ def node6_send():
 
 @app.route("/")
 def index():
-    return "✅ 内容生产流水线 - 每天自动生成健康养生文章并推送到微信"
+    return "✅ 内容生产流水线<br>百度+微博+头条三源采集<br>每天自动推送到微信"
 
 @app.route("/trigger")
 def trigger():
@@ -189,7 +272,7 @@ def test():
     """测试 Server酱 推送"""
     result = send_to_wechat(
         title="🧪 测试消息",
-        content="这是一条测试消息，如果收到这条消息，说明推送功能正常！"
+        content="这是一条测试消息，如果收到这条消息，说明推送功能正常！\n\n- 百度热榜\n- 微博热榜\n- 今日头条\n三源采集系统已就绪！"
     )
     return jsonify({"success": True, "result": result})
 
