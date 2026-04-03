@@ -15,7 +15,11 @@ os.makedirs(DATA_DIR, exist_ok=True)
 def log(msg):
     print(f"[{datetime.now()}] {msg}", flush=True)
 
-# ============ 节点函数 ============
+def truncate_title(title, max_len=60):
+    """标题长度限制"""
+    if len(title) > max_len:
+        return title[:max_len]
+    return title
 
 def node1_collector():
     keywords = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感", "家庭", "婚姻", "父母", "养老", "中年", "老年", "血压", "血糖"]
@@ -59,7 +63,8 @@ def node2_title():
     except:
         title = "健康养生文章"
     
-    best_title = f"医生不会告诉你的{title.split('？')[0]}真相，早知道早受益"
+    best_title = f"医生不会告诉你的{title.split('？')[0]}真相"
+    best_title = truncate_title(best_title, 60)
     with open(f"{DATA_DIR}/title.json", "w") as f:
         json.dump({"title": best_title}, f)
     log(f"[2] 标题: {best_title}")
@@ -155,12 +160,10 @@ def node6_publish():
         
         # 上传永久封面图片
         log("[6] 上传永久封面...")
-        # 创建简单的PNG图片
         png_data = base64.b64decode(
             "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
         )
         
-        # 使用永久素材接口
         upload_url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type=thumb"
         files = {"media": ("cover.png", png_data, "image/png")}
         r = requests.post(upload_url, files=files, timeout=30)
@@ -179,13 +182,15 @@ def node6_publish():
         try:
             with open(f"{DATA_DIR}/article.json") as f:
                 data = json.load(f)
-            title = data["title"]
+            title = truncate_title(data["title"], 60)
             article = data["article"]
             summary = data["article"][:100]
         except:
             title = "健康养生文章"
             article = "内容..."
             summary = "健康养生文章"
+        
+        log(f"[6] 标题长度: {len(title)}字")
         
         # 创建草稿
         html = f"<div style='font-size:16px;line-height:1.8;'>{article.replace(chr(10), '<br/>')}</div>"
@@ -217,8 +222,6 @@ def node6_publish():
         import traceback
         traceback.print_exc()
         return {"status": "error", "error": str(e)}
-
-# ============ HTTP 路由 ============
 
 @app.route("/")
 def index():
