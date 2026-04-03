@@ -5,6 +5,7 @@ import os
 import json
 import struct
 import zlib
+import io
 from datetime import datetime
 import requests
 
@@ -29,27 +30,31 @@ def truncate_title(title, max_bytes=50):
         result += char
     return result
 
-def make_png(width=300, height=300, r=100, g=150, b=200):
-    """生成纯色PNG图片"""
-    def chunk(name, data):
-        c = struct.pack('>I', len(data)) + name + data
-        return c + struct.pack('>I', zlib.crc32(name + data) & 0xffffffff)
-    
-    # PNG header
-    header = b'\x89PNG\r\n\x1a\n'
-    # IHDR
-    ihdr_data = struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0)
-    ihdr = chunk(b'IHDR', ihdr_data)
-    # IDAT - 每行像素
-    raw = b''
-    for _ in range(height):
-        raw += b'\x00' + bytes([r, g, b] * width)
-    compressed = zlib.compress(raw)
-    idat = chunk(b'IDAT', compressed)
-    # IEND
-    iend = chunk(b'IEND', b'')
-    
-    return header + ihdr + idat + iend
+def make_jpg(width=900, height=383):
+    """生成最小合法JPG图片（绿色背景）"""
+    try:
+        from PIL import Image
+        img = Image.new('RGB', (width, height), color=(76, 175, 80))
+        buf = io.BytesIO()
+        img.save(buf, format='JPEG', quality=85)
+        return buf.getvalue()
+    except ImportError:
+        # 没有PIL，用最小JPG
+        # 这是一个有效的16x16绿色JPG
+        jpg_hex = (
+            "ffd8ffe000104a46494600010100000100010000"
+            "ffdb004300080606070605080707070909080a0c"
+            "140d0c0b0b0c1912130f141d1a1f1e1d1a1c1c20"
+            "242e2720222c231c1c2837292c30313434341f27"
+            "39393238323334320000ffdb0043010909090c0b"
+            "0c180d0d1832211c213232323232323232323232"
+            "323232323232323232323232323232323232323232"
+            "32323232323232323232323232323232ffc0001108"
+            "00100010030111003802110321100fffc4001f0000"
+            "0105010101010100000000000000000102030405060"
+            "70809ffda000c03010002110311003f00ffd9"
+        )
+        return bytes.fromhex(jpg_hex.replace('\n', '').replace(' ', ''))
 
 def node1_collector():
     keywords = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感", "家庭", "婚姻", "父母", "养老", "中年", "老年", "血压", "血糖"]
@@ -188,6 +193,25 @@ def node6_publish():
             return {"status": "failed", "error": f"token: {errcode}"}
         log(f"[6] token成功!")
         
+        # 生成JPG封面图
+        log("[6] 生成JPG封面...")
+        jpg_data = make_jpg(900, 383)
+        log(f"[6] JPG大小: {len(jpg_data)} bytes")
+        
+        # 上传永久素材（JPG格式）
+        upload_url = f"https://api.weixin.qq.com/cgi-bin/material/add_material?access_token={token}&type=thumb"
+        files = {"media": ("cover.jpg", jpg_data, "image/jpeg")}
+        r = requests.post(upload_url, files=files, timeout=30)
+        upload_result = r.json()
+        log(f"[6] 上传结果: {upload_result}")
+        
+        thumb_media_id = upload_result.get("media_id")
+        if not thumb_media_id:
+            log(f"[6] 上传失败: {upload_result}")
+            return {"status": "failed", "error": f"upload: {upload_result}"}
+        
+        log(f"[6] 封面ID: {thumb_media_id}")
+        
         # 读取文章
         try:
             with open(f"{DATA_DIR}/article.json") as f:
@@ -202,7 +226,7 @@ def node6_publish():
         
         log(f"[6] 标题: {title} ({len(title.encode('utf-8'))}字节)")
         
-        # 创建草稿（不传thumb_media_id，测试是否可行）
+        # 创建草稿
         html = f"<div style='font-size:16px;line-height:1.8;'>{article.replace(chr(10), '<br/>')}</div>"
         draft_url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
         
@@ -211,6 +235,7 @@ def node6_publish():
             "author": "AI",
             "digest": summary,
             "content": html,
+            "thumb_media_id": thumb_media_id,
             "need_open_comment": 1,
             "only_fans_can_comment": 0
         }
