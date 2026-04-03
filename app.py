@@ -52,7 +52,7 @@ def index():
 def verify_file(filename):
     # 把下载的校验文件内容直接写在这里（替换成你实际下载的文件内容）
     # 例如：如果文件内容是 "abc123456789"，就 return "abc123456789"
-    return "替换成你下载的校验文件内容"
+    return "rbycC54eWHXTLryw"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=PORT)
