@@ -3,13 +3,12 @@
 from flask import Flask, jsonify
 import os
 import json
-import glob
+import base64
 from datetime import datetime
 import requests
 
 app = Flask(__name__)
 
-# 数据目录
 DATA_DIR = "/tmp/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
@@ -22,21 +21,18 @@ def node1_collector():
     keywords = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感", "家庭", "婚姻", "父母", "养老", "中年", "老年", "血压", "血糖"]
     
     items = []
-    # 百度热榜
     try:
         r = requests.get("https://top.baidu.com/api/board/getBoard?boardId=realtime", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         items += [{"title": i["query"], "source": "百度"} for i in r.json()["data"]["content"][:20]]
     except:
         pass
     
-    # 微博热榜
     try:
         r = requests.get("https://weibo.com/ajax/side/hotSearch", headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         items += [{"title": i["word"], "source": "微博"} for i in r.json()["data"]["realtime"][:20]]
     except:
         pass
     
-    # 如果失败用模拟数据
     if not items:
         items = [
             {"title": "中老年人如何科学养生？医生给出5条建议", "source": "mock"},
@@ -47,11 +43,9 @@ def node1_collector():
         ]
         log("API不可用，使用模拟数据")
     
-    # 计算相关度
     for item in items:
         item["score"] = sum(2 if kw in ["健康", "养生", "情感"] else 1 for kw in keywords if kw in item["title"])
     
-    # 筛选排序
     filtered = sorted([i for i in items if i["score"] > 0], key=lambda x: x["score"], reverse=True)[:10]
     
     with open(f"{DATA_DIR}/candidates.json", "w") as f:
@@ -90,8 +84,7 @@ def node3_outline():
 def node4_article():
     try:
         with open(f"{DATA_DIR}/outline.json") as f:
-            outline = json.load(f)
-        title = outline["title"]
+            title = json.load(f)["title"]
     except:
         title = "健康养生文章"
     
@@ -148,7 +141,6 @@ def node6_publish():
     secret = os.environ.get("WECHAT_SECRET", "")
     
     log(f"[6] 环境变量: appid={appid[:10]}..." if appid else "[6] appid为空")
-    
     if not appid or not secret:
         log("[6] 公众号未配置，跳过")
         return {"status": "skipped"}
@@ -156,21 +148,38 @@ def node6_publish():
     try:
         # 获取token
         token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
-        log(f"[6] 请求微信API...")
-        
         r = requests.get(token_url, timeout=10)
         response = r.json()
-        log(f"[6] 微信响应: {response}")
-        
         token = response.get("access_token")
         
         if not token:
             errcode = response.get("errcode", "unknown")
-            errmsg = response.get("errmsg", "unknown")
-            log(f"[6] 获取token失败: errcode={errcode}, errmsg={errmsg}")
+            log(f"[6] 获取token失败: errcode={errcode}")
             return {"status": "failed", "error": f"errcode: {errcode}"}
         
         log(f"[6] token获取成功!")
+        
+        # 创建空白图片作为封面
+        log("[6] 创建封面图...")
+        # 1x1 透明 PNG 图片的 base64
+        blank_png = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        )
+        
+        # 上传临时素材获取thumb_media_id
+        upload_url = f"https://api.weixin.qq.com/cgi-bin/media/upload?access_token={token}&type=image"
+        files = {"media": ("cover.png", blank_png, "image/png")}
+        r = requests.post(upload_url, files=files, timeout=30)
+        upload_result = r.json()
+        log(f"[6] 上传响应: {upload_result}")
+        
+        thumb_media_id = upload_result.get("media_id")
+        
+        if not thumb_media_id:
+            log(f"[6] 上传封面失败: {upload_result}")
+            return {"status": "failed", "error": "upload failed"}
+        
+        log(f"[6] 封面上传成功: {thumb_media_id}")
         
         # 读取文章
         try:
@@ -184,27 +193,21 @@ def node6_publish():
             article = "内容..."
             summary = "健康养生文章"
         
-        # 创建草稿（不传thumb_media_id）
+        # 创建草稿
         html = f"<div style='font-size:16px;line-height:1.8;'>{article.replace(chr(10), '<br/>')}</div>"
         draft_url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
-        log(f"[6] 创建草稿...")
         
-        # 不传thumb_media_id字段
         article_data = {
             "title": title,
             "author": "AI助手",
             "digest": summary,
             "content": html,
-            "content_source_url": "",
+            "thumb_media_id": thumb_media_id,
             "need_open_comment": 1,
             "only_fans_can_comment": 0
         }
         
-        r = requests.post(
-            draft_url,
-            json={"articles": [article_data]},
-            timeout=30
-        )
+        r = requests.post(draft_url, json={"articles": [article_data]}, timeout=30)
         result = r.json()
         log(f"[6] 草稿响应: {result}")
         
@@ -214,6 +217,7 @@ def node6_publish():
         else:
             log(f"[6] 发布失败: {result}")
             return {"status": "failed", "error": str(result)}
+            
     except Exception as e:
         log(f"[6] 异常: {e}")
         import traceback
