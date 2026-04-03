@@ -48,9 +48,9 @@ def node6_publish():
         return {"status": "skipped"}
 
     try:
-        # 获取TOKEN
-        token_url = f"https://api.cloudflare.com/redirect?url=https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
-        token_resp = requests.get(token_url, timeout=15).json()
+        # ✅ 正确的微信官方 Token 地址
+        token_url = f"https://api.weixin.qq.com/cgi-bin/token?grant_type=client_credential&appid={appid}&secret={secret}"
+        token_resp = requests.get(token_url, timeout=10).json()
         token = token_resp.get("access_token")
 
         if not token:
@@ -59,10 +59,9 @@ def node6_publish():
 
         log("[6] Token获取成功 ✅")
 
-        # 极简标题（绝对合规）
         title = "健康养生"
 
-        # 上传临时图片（最稳定）
+        # 上传临时图片
         png_data = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
         upload_url = f"https://api.weixin.qq.com/cgi-bin/media/upload?access_token={token}&type=image"
         files = {"media": ("cover.png", png_data, "image/png")}
@@ -75,9 +74,7 @@ def node6_publish():
 
         log("[6] 封面上传成功 ✅")
 
-        # ==============================================
-        # 🔥 终极极简：只留 标题 + 封面 + 正文（必过！）
-        # ==============================================
+        # 极简发布（必过）
         draft_url = f"https://api.weixin.qq.com/cgi-bin/draft/add?access_token={token}"
         payload = {
             "articles": [
@@ -101,7 +98,6 @@ def node6_publish():
     except Exception as e:
         log(f"[6] 异常: {e}")
         return {"status": "error", "error": str(e)}
-
 @app.route("/")
 def index():
     return "服务运行正常 ✅"
