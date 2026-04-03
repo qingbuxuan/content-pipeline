@@ -49,9 +49,9 @@ def call_deepseek(prompt, system_prompt="你是一个有用的助手", temperatu
                 {"role": "user", "content": prompt}
             ],
             "temperature": temperature,
-            "max_tokens": 1500
+            "max_tokens": 2000
         }
-        resp = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=120)
+        resp = requests.post(DEEPSEEK_API_URL, headers=headers, json=payload, timeout=180)
         result = resp.json()
         
         if "choices" in result and len(result["choices"]) > 0:
@@ -173,6 +173,49 @@ xxx
 【小标题】（3-5个，用吸引人的方式命名）
 """
 
+THREE_HOOKS_ARTICLE_PROMPT = """## 任务
+根据以下大纲，用三把钩子写作法扩写成一篇完整的微信公众号爆款文章。
+
+## 标题
+{title}
+
+## 大纲
+{outline}
+
+## 三把钩子写作自检清单
+
+### 第一把钩子：谁会觉得"这说的是我"？
+□ 开头第一段是否直接命中一个具体痛点？
+□ 目标读者画像清晰吗？（年龄、职业、具体困境）
+□ 痛点问题用读者语气写出来了吗？
+□ 哪个日常瞬间让问题爆发？（凌晨惊醒/刷朋友圈/被@/聚会时...）
+□ 好处承诺具体吗？
+
+### 第二把钩子：我凭什么让别人相信？
+□ 核心观点一句话说透了吗？
+□ 有没有真实例子？（名字、背景、说过的话、具体画面）
+□ 有没有用"其实..."揭示底层逻辑？
+□ 有没有对比反差强化逻辑？
+□ 中间部分有让人点头的例子吗？
+
+### 第三把钩子：看完能带走什么？
+□ 第一步/第二步/第三步具体可操作吗？
+□ 有没有作者亲身经历的故事细节？
+□ 有没有引发共鸣的情绪细节？
+□ 结尾金句能让人划线/转发吗？
+□ 互动问题能引发评论区留言吗？
+
+## 正文写作要求
+1. 字数：800-1200字
+2. 格式：用emoji小标题分段
+3. 语言：接地气，像跟朋友聊天
+4. 开头：必须有强吸引力的钩子，一秒钩住读者
+5. 中间：用例子+逻辑建立信任
+6. 结尾：具体步骤+金句+互动问题
+
+## 输出
+直接输出完整文章正文，不需要其他说明。"""
+
 # ========== 节点函数 ==========
 
 def node1_collector():
@@ -277,7 +320,6 @@ def node2_title():
                     final_title = title
                     break
         
-        # 如果没找到，尝试其他标记
         if not final_title:
             for line in lines:
                 if "★" in line or "⭐" in line or "最优" in line:
@@ -286,7 +328,6 @@ def node2_title():
                         final_title = title
                         break
         
-        # 如果还没找到，取第一个看起来像标题的行
         if not final_title:
             for line in lines:
                 line = line.strip()
@@ -296,7 +337,6 @@ def node2_title():
                         break
         
         if final_title:
-            # 确保不超过64字节
             while len(final_title.encode('utf-8')) > 60 and len(final_title) > 10:
                 final_title = final_title[:-1]
             
@@ -305,7 +345,6 @@ def node2_title():
             log(f"[2] ✅ 最终标题: {final_title}")
             return final_title
     
-    # 备用方案
     log("[2] DeepSeek失败，使用模板")
     topic = items[0]["title"] if items else "健康养生"
     final_title = f"医生不会告诉你的{topic}真相"
@@ -340,7 +379,6 @@ def node3_outline():
             json.dump({"outline": result, "title": title}, f, ensure_ascii=False)
         return result
     
-    # 备用大纲
     log("[3] DeepSeek失败，使用模板")
     outline = f"""【目标读者】
 - 人群：50-70岁中老年人
@@ -362,7 +400,7 @@ def node3_outline():
     return outline
 
 def node4_article():
-    """生成正文"""
+    """生成正文 - 使用三把钩子写作法"""
     try:
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
             title = json.load(f)["title"]
@@ -376,36 +414,15 @@ def node4_article():
         outline = ""
         source = "网络"
     
-    log("[4] 使用DeepSeek生成正文...")
+    log("[4] 使用三把钩子写作法生成正文...")
     
-    article_prompt = f"""## 任务
-根据以下大纲，扩写成一篇完整的微信公众号文章。
-
-## 标题
-{title}
-
-## 大纲
-{outline[:1500] if outline else "基础大纲"}
-
-## 要求
-1. 用三把钩子写作法
-2. 语言接地气，像跟朋友聊天
-3. 开头要有强吸引力，让人想继续读
-4. 中间有具体案例和细节
-5. 结尾有金句和互动问题
-6. 字数800-1200字
-7. 格式用emoji小标题分段
-
-## 输出
-直接输出完整文章内容"""
-
-    result = call_deepseek(article_prompt, THREE_HOOKS_SYSTEM, temperature=0.8)
+    prompt = THREE_HOOKS_ARTICLE_PROMPT.format(title=title, outline=outline[:2000] if outline else "基础大纲")
+    result = call_deepseek(prompt, THREE_HOOKS_SYSTEM, temperature=0.8)
     
     if result:
         article = result
         log(f"[4] 正文生成成功: {len(article)}字")
     else:
-        # 备用正文
         log("[4] DeepSeek失败，使用模板")
         article = f"""【{title}】
 
@@ -421,14 +438,14 @@ def node4_article():
 健康养生需要科学方法，预防大于治疗。
 
 ■ 实用建议
-1. 规律作息
-2. 合理膳食
-3. 适度运动
-4. 定期体检
-5. 心态平和
+1. 规律作息：早睡早起，保证7-8小时睡眠
+2. 合理膳食：少油少盐，多吃蔬菜水果
+3. 适度运动：每天30分钟中等强度运动
+4. 定期体检：每年至少一次全面体检
+5. 心态平和：保持乐观积极的生活态度
 
 ■ 结语
-健康是最宝贵的财富！
+健康是最宝贵的财富。希望今天的分享对大家有帮助！
 
 ——
 *本文由AI自动生成 | 数据来源：{source}热榜*"""
@@ -509,7 +526,7 @@ def trigger():
 def test():
     result = send_to_wechat(
         title="🧪 测试消息",
-        content="测试消息\n\n三源热榜 + 三把钩子写作法 + DeepSeek已就绪！"
+        content="测试消息\n\n三源热榜 + 三把钩子写作法已就绪！"
     )
     return jsonify({"success": True, "result": result})
 
