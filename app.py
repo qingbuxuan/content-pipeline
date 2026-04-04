@@ -461,6 +461,16 @@ def index():
 
 @app.route("/trigger")
 def trigger():
+    # 每日只执行一次
+    today = datetime.now().strftime('%Y%m%d')
+    lock_file = f"{DATA_DIR}/executed_{today}.lock"
+    
+    if os.path.exists(lock_file):
+        log("="*50)
+        log("⏭️ 今日已执行，跳过")
+        log("="*50)
+        return jsonify({"success": True, "result": {"status": "skipped", "message": "今日已执行过"}})
+    
     log("="*50)
     log("🚀 流水线启动")
     log("="*50)
@@ -472,6 +482,10 @@ def trigger():
         node4_article()
         node5_summary_and_cover()
         result = node6_send()
+        
+        # 成功后创建锁文件
+        with open(lock_file, 'w') as f:
+            f.write(datetime.now().isoformat())
         
         log("="*50)
         log("🏁 流水线完成")
