@@ -47,40 +47,12 @@ def get_access_token():
         log(f"[微信] Access Token 获取失败: {result}")
         return None
 
-def upload_permanent_image(access_token, image_url):
-    """下载封面图并上传为永久素材，返回 media_id"""
+def upload_cover_for_draft(access_token, image_url):
+    """下载封面图 → 压缩 → 上传为永久图片素材 → 返回 media_id
+    
+    关键：草稿箱 API 必须用永久素材（material/add_material），不能用临时素材（media/upload）
+    """
     log(f"[微信] 下载封面图: {image_url}")
-    
-    # 1. 下载图片
-    img_resp = requests.get(image_url, timeout=30)
-    if img_resp.status_code != 200:
-        log(f"[微信] 图片下载失败: HTTP {img_resp.status_code}")
-        return None
-    
-    image_bytes = img_resp.content
-    log(f"[微信] 图片下载成功: {len(image_bytes)} bytes")
-    
-    # 2. 上传为永久素材（图片）
-    upload_url = f"https://api.weixin.qq.com/cgi-bin/material/add_material"
-    files = {"media": ("cover.png", image_bytes, "image/png")}
-    data = {"access_token": access_token, "type": "image"}
-    
-    upload_resp = requests.post(upload_url, params=data, files=files, timeout=30)
-    upload_result = upload_resp.json()
-    
-    log(f"[微信] 上传素材结果: {upload_result}")
-    
-    if "media_id" in upload_result:
-        media_id = upload_result["media_id"]
-        log(f"[微信] 永久素材 media_id: {media_id}")
-        return media_id
-    else:
-        log(f"[微信] 素材上传失败: {upload_result}")
-        return None
-
-def upload_thumb_image(access_token, image_url):
-    """下载封面图 → 压缩到64KB内 → 上传为缩略图，返回 media_id"""
-    log(f"[微信] 下载并压缩封面图: {image_url}")
     
     # 1. 下载图片
     img_resp = requests.get(image_url, timeout=30)
@@ -91,7 +63,7 @@ def upload_thumb_image(access_token, image_url):
     original_bytes = img_resp.content
     log(f"[微信] 原始图片大小: {len(original_bytes) / 1024:.1f} KB")
     
-    # 2. 用 Pillow 压缩图片（微信 thumb 限制 64KB）
+    # 2. 用 Pillow 压缩（永久图片素材限 2MB，这里压缩到 1MB 以内留余量）
     try:
         import io
         from PIL import Image
@@ -106,115 +78,67 @@ def upload_thumb_image(access_token, image_url):
         log(f"[微信] Pillow 打开图片失败: {e}")
         return None
     
-    # 转换为 RGB（处理 RGBA/PNG 透明通道）
-    try:
-        if img.mode in ("RGBA", "P", "LA"):
-            background = Image.new("RGB", img.size, (255, 255, 255))
-            if img.mode == "P":
-                img = img.convert("RGBA")
-            background.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
-            img = background
-        elif img.mode != "RGB":
-            img = img.convert("RGB")
-    except Exception as e:
-        log(f"[微信] 图片模式转换失败: {e}")
-        return None
+    # 转换为 RGB
+    if img.mode in ("RGBA", "P", "LA"):
+        background = Image.new("RGB", img.size, (255, 255, 255))
+        if img.mode == "P":
+            img = img.convert("RGBA")
+        background.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+        img = background
+    elif img.mode != "RGB":
+        img = img.convert("RGB")
     
-    # 逐步压缩直到 < 64KB
-    MAX_SIZE_KB = 60  # 留点余量
+    # 缩放到标准封面尺寸（900x506，16:9）
     output = io.BytesIO()
+    tgt_w, tgt_h = 900, 506
+    if img.width > tgt_w:
+        ratio = tgt_w / img.width
+        img = img.resize((tgt_w, int(img.height * ratio)), Image.LANCZOS)
+    log(f"[微信] 缩放后: {img.width}x{img.height}")
     
-    # 16:9 尺寸序列（从大到小）
-    # 1280x720 → 900x506 → 640x360 → 480x270 → 320x180 → 240x135
-    size_sequence = [
-        (900, 506), (640, 360), (480, 270), (320, 180), (240, 135)
-    ]
+    # 保存为 JPEG（质量 85，约 300-500KB）
+    output = io.BytesIO()
+    img.save(output, format="JPEG", quality=85, optimize=True)
+    compressed = output.getvalue()
+    log(f"[微信] 压缩后大小: {len(compressed)/1024:.1f} KB")
     
-    best_bytes = None
-    compressed = None
-    
-    for tgt_w, tgt_h in size_sequence:
-        # 按目标尺寸缩放（只缩小，不放大）
-        w, h = img.width, img.height
-        if w > tgt_w:
-            ratio = tgt_w / w
-            tgt_h_calc = int(h * ratio)
-            resize_img = img.resize((tgt_w, tgt_h_calc), Image.LANCZOS)
-            log(f"[微信] 缩放至 {tgt_w}x{tgt_h_calc} (16:9)")
-        else:
-            resize_img = img
-            log(f"[微信] 使用原始尺寸 {w}x{h}")
-        
-        # 在当前尺寸下，逐步降低 JPEG 质量
-        for quality in [80, 60, 40, 25, 15, 10]:
-            try:
-                output.seek(0)
-                output.truncate()
-                resize_img.save(output, format="JPEG", quality=quality, optimize=True)
-                compressed = output.getvalue()
-                size_kb = len(compressed) / 1024
-                log(f"[微信] 质量={quality}, 大小={size_kb:.1f}KB {'✅' if size_kb < MAX_SIZE_KB else '❌'}")
-                
-                if size_kb < MAX_SIZE_KB:
-                    best_bytes = compressed
-                    log(f"[微信] ✅ 压缩达标: {resize_img.width}x{resize_img.height} @ q={quality}, {size_kb:.1f}KB")
-                    break
-            except Exception as e:
-                log(f"[微信] 压缩异常 quality={quality}: {e}")
-        
-        if best_bytes:
-            break
-    
-    if best_bytes is None and compressed:
-        log("[微信] ⚠️ 未达64KB限制，使用最小尺寸尝试上传")
-        best_bytes = compressed
-    elif best_bytes is None:
-        log("[微信] ❌ 压缩完全失败")
-        return None
-    
-    log(f"[微信] 最终压缩大小: {len(best_bytes)/1024:.1f}KB")
-    
-    # 3. 上传为 thumb 类型
-    upload_url = f"https://api.weixin.qq.com/cgi-bin/media/upload"
-    files = {"media": ("cover.jpg", best_bytes, "image/jpeg")}
-    data = {"access_token": access_token, "type": "thumb"}
+    # 3. 上传为永久图片素材（草稿箱专用）
+    upload_url = "https://api.weixin.qq.com/cgi-bin/material/add_material"
+    files = {"media": ("cover.jpg", compressed, "image/jpeg")}
+    data = {"access_token": access_token, "type": "image"}
     
     upload_resp = requests.post(upload_url, params=data, files=files, timeout=30)
     upload_result = upload_resp.json()
     
-    log(f"[微信] 缩略图上传结果: {upload_result}")
+    log(f"[微信] 永久素材上传结果: {upload_result}")
     
-    if "thumb_media_id" in upload_result:
-        thumb_media_id = upload_result["thumb_media_id"]
-        log(f"[微信] thumb_media_id: {thumb_media_id}")
-        return thumb_media_id
+    if "media_id" in upload_result:
+        media_id = upload_result["media_id"]
+        log(f"[微信] ✅ 永久素材 media_id: {media_id}")
+        return media_id
     else:
-        log(f"[微信] 缩略图上传失败: {upload_result}")
+        log(f"[微信] ❌ 永久素材上传失败: {upload_result}")
         return None
 
-def create_draft(access_token, title, author, digest, content_html, thumb_media_id):
-    """创建草稿箱文章"""
+def create_draft(access_token, title, author, digest, content_html, media_id):
+    """创建草稿箱文章（使用永久素材 media_id）"""
     log(f"[微信] 创建草稿箱文章...")
     
-    # 转换内容为 HTML 片段（微信草稿箱格式）
-    content_body = {
-        "title": title,
-        "author": author,
-        "digest": digest,
-        "content": content_html,
-        "content_source_url": "",
-        "thumb_media_id": thumb_media_id,
-        "need_open_comment": 1,
-        "only_fans_can_comment": 0
+    payload = {
+        "articles": [{
+            "title": title,
+            "author": author,
+            "digest": digest,
+            "content": content_html,
+            "content_source_url": "",
+            "thumb_media_id": media_id,   # 永久素材的 media_id
+            "need_open_comment": 1,
+            "only_fans_can_comment": 0,
+            "author": author,
+        }]
     }
     
-    articles = [{"thumb_media_id": thumb_media_id, "author": author, "title": title, 
-                 "content_source_url": "", "digest": digest, "content": content_html,
-                 "thumb_url": ""}]
-    
-    payload = {"articles": articles}
-    
-    url = f"https://api.weixin.qq.com/cgi-bin/draft/add"
+    url = "https://api.weixin.qq.com/cgi-bin/draft/add"
     params = {"access_token": access_token}
     headers = {"Content-Type": "application/json; charset=utf-8"}
     
@@ -358,12 +282,12 @@ def push_to_draft():
         log("❌ Access Token 获取失败，终止")
         return {"status": "error", "message": "Access Token 获取失败"}
     
-    # 3. 上传缩略图
-    log("[3] 上传缩略图...")
-    thumb_media_id = upload_thumb_image(access_token, cover_url)
-    if not thumb_media_id:
-        log("❌ 缩略图上传失败，终止")
-        return {"status": "error", "message": "缩略图上传失败"}
+    # 3. 上传封面图（永久素材，用于草稿箱）
+    log("[3] 上传封面图（永久素材）...")
+    media_id = upload_cover_for_draft(access_token, cover_url)
+    if not media_id:
+        log("❌ 封面图上传失败，终止")
+        return {"status": "error", "message": "封面图上传失败"}
     
     # 4. 创建草稿
     log("[4] 创建草稿箱...")
@@ -373,7 +297,7 @@ def push_to_draft():
         author=TEST_ARTICLE["author"],
         digest=TEST_ARTICLE["digest"],
         content_html=TEST_ARTICLE["content"],
-        thumb_media_id=thumb_media_id
+        media_id=media_id
     )
     
     if success:
@@ -449,13 +373,13 @@ def push_draft_route():
     if not access_token:
         return jsonify({"success": False, "error": "Access Token 获取失败"}), 500
     
-    # 上传缩略图
-    thumb_media_id = upload_thumb_image(access_token, cover_url)
-    if not thumb_media_id:
-        return jsonify({"success": False, "error": "缩略图上传失败"}), 500
+    # 上传封面图（永久素材）
+    media_id = upload_cover_for_draft(access_token, cover_url)
+    if not media_id:
+        return jsonify({"success": False, "error": "封面图上传失败"}), 500
     
     # 创建草稿
-    success = create_draft(access_token, title, author, digest, content, thumb_media_id)
+    success = create_draft(access_token, title, author, digest, content, media_id)
     
     if success:
         send_to_wechat(f"✅ 草稿推送成功：{title}", f"文章已推送至草稿箱，请及时发布。\n封面：{cover_url}")
