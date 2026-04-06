@@ -1,7 +1,15 @@
 from flask import Flask, jsonify
 import os
 import json
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+
+# 北京时间（UTC+8）
+BEIJING_TZ = timezone(timedelta(hours=8))
+
+def beijing_now():
+    return datetime.now(BEIJING_TZ)
+
+WEEKDAY_NAMES = ["周一", "周二", "周三", "周四", "周五", "周六", "周日"]
 import requests
 import base64
 import hashlib
@@ -332,9 +340,9 @@ COVER_PROMPT = """## 任务
 
 def get_weekday_theme():
     """获取今天的星期主题"""
-    weekday = datetime.now().weekday()  # 0=周一, 6=周日
+    weekday = beijing_now().weekday()  # 0=周一, 6=周日，使用北京时间
     theme_info = WEEKLY_THEMES.get(weekday, WEEKLY_THEMES[0])
-    log(f"[主题] 今天是周{weekday+1} · {theme_info['name']} · {theme_info['theme']}")
+    log(f"[主题] 今天是{WEEKDAY_NAMES[weekday]} · {theme_info['name']} · {theme_info['theme']}")
     return weekday, theme_info
 
 def score_item(title, theme_keywords=None):
@@ -659,7 +667,7 @@ def node6_send():
     theme_tag = f"📌 **今日主题：** {theme_info.get('name', '健康养生')} · {theme_info.get('theme', '')}"
     
     weekday, _ = get_weekday_theme()
-    content = f"""📅 **周{weekday+1}** · {theme_info.get('name', '健康养生')}
+    content = f"""📅 **{WEEKDAY_NAMES[weekday]}** · {theme_info.get('name', '健康养生')}
 
 {theme_tag}
 
@@ -700,7 +708,7 @@ def index():
 @app.route("/trigger")
 def trigger():
     # 每日只执行一次
-    today = datetime.now().strftime('%Y%m%d')
+    today = beijing_now().strftime('%Y%m%d')
     lock_file = f"{DATA_DIR}/executed_{today}.lock"
     
     if os.path.exists(lock_file):
