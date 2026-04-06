@@ -79,8 +79,8 @@ def upload_permanent_image(access_token, image_url):
         return None
 
 def upload_thumb_image(access_token, image_url):
-    """上传封面图（缩略图，用于草稿箱）返回 media_id"""
-    log(f"[微信] 下载并上传封面图（缩略图）: {image_url}")
+    """下载封面图 → 压缩到64KB内 → 上传为缩略图，返回 media_id"""
+    log(f"[微信] 下载并压缩封面图: {image_url}")
     
     # 1. 下载图片
     img_resp = requests.get(image_url, timeout=30)
@@ -88,12 +88,67 @@ def upload_thumb_image(access_token, image_url):
         log(f"[微信] 图片下载失败: HTTP {img_resp.status_code}")
         return None
     
-    image_bytes = img_resp.content
-    log(f"[微信] 图片下载成功: {len(image_bytes)} bytes")
+    original_bytes = img_resp.content
+    log(f"[微信] 原始图片大小: {len(original_bytes) / 1024:.1f} KB")
     
-    # 2. 上传为 thumb 类型（草稿箱用 thumb）
+    # 2. 用 Pillow 压缩图片（微信 thumb 限制 64KB）
+    from PIL import Image
+    import io
+    
+    img = Image.open(io.BytesIO(original_bytes))
+    
+    # 转换为 RGB（处理 RGBA/PNG 透明通道）
+    if img.mode in ("RGBA", "P", "LA"):
+        background = Image.new("RGB", img.size, (255, 255, 255))
+        if img.mode == "P":
+            img = img.convert("RGBA")
+        background.paste(img, mask=img.split()[-1] if img.mode == "RGBA" else None)
+        img = background
+    elif img.mode != "RGB":
+        img = img.convert("RGB")
+    
+    # 逐步压缩直到 < 64KB
+    MAX_SIZE_KB = 60  # 留点余量
+    
+    output = io.BytesIO()
+    
+    # 16:9 标准尺寸映射（宽度 → 高度）
+    # 1280x720 → 900x506 → 640x360 → 480x270 → 320x180
+    target_widths = [900, 640, 480, 320, 240]
+    best_bytes = None
+    
+    for max_w in target_widths:
+        if img.width <= max_w:
+            resize_img = img
+        else:
+            ratio = max_w / img.width
+            resize_img = img.resize((max_w, int(img.height * ratio)), Image.LANCZOS)
+        
+        log(f"[微信] 缩放到 {resize_img.width}x{resize_img.height} (16:9)")
+        
+        # 在当前尺寸下，逐步降低质量
+        for quality in [80, 60, 40, 25, 15]:
+            output.seek(0)
+            output.truncate()
+            resize_img.save(output, format="JPEG", quality=quality, optimize=True)
+            compressed = output.getvalue()
+            size_kb = len(compressed) / 1024
+            
+            if size_kb < MAX_SIZE_KB:
+                best_bytes = compressed
+                log(f"[微信] 压缩成功: {resize_img.width}x{resize_img.height} @ q={quality}, {size_kb:.1f}KB ✅")
+                break
+        
+        if best_bytes:
+            break
+    
+    if best_bytes is None:
+        log("[微信] ⚠️ 压缩后仍超过64KB，使用最小尺寸")
+        best_bytes = output.getvalue()
+    
+    # 3. 上传为 thumb 类型
     upload_url = f"https://api.weixin.qq.com/cgi-bin/media/upload"
-    files = {"media": ("cover.png", image_bytes, "image/png")}
+    files = {"media": ("cover.jpg", best_bytes, "image/jpeg")}
     data = {"access_token": access_token, "type": "thumb"}
     
     upload_resp = requests.post(upload_url, params=data, files=files, timeout=30)
