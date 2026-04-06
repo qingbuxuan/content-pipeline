@@ -518,9 +518,10 @@ def test_draft():
 
 @app.route("/trigger")
 def trigger():
+    force = request.args.get("force", "0") == "1"
     today = beijing_now().strftime('%Y%m%d')
     lock_file = f"{DATA_DIR}/executed_{today}.lock"
-    if os.path.exists(lock_file):
+    if os.path.exists(lock_file) and not force:
         log("⏭️ 今日已执行，跳过")
         return jsonify({"success": True, "result": {"status": "skipped"}})
     log("=" * 50)
