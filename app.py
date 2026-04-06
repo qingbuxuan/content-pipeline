@@ -157,18 +157,24 @@ def create_draft(access_token, title, author, digest, content_html, media_id, th
     params = {"access_token": access_token}
     headers = {"Content-Type": "application/json; charset=utf-8"}
     
-    # 关键修复：手动 JSON 序列化 + ensure_ascii=False
-    # requests.post(..., json=payload) 内部默认 ensure_ascii=True
-    # 这会把每个中文展开为 \uXXXX（6字节），导致51字节的标题变成120+字节
-    # 手动序列化保持 UTF-8 原生编码，51字节 < 64字节 限制
+    # 手动 JSON 序列化 + ensure_ascii=False
+    # requests.post(..., json=payload) 默认 ensure_ascii=True
+    # 每个中文变成 \uXXXX（6字节），51字节标题→120+字节超限
     json_body = json.dumps(payload, ensure_ascii=False)
+    json_bytes = len(json_body.encode("utf-8"))
+    log(f"[微信] JSON总字节数: {json_bytes}")
+    log(f"[微信] 标题UTF-8字节数: {len(title.encode('utf-8'))}")
+    log(f"[微信] 实际发送payload预览: {json_body[:200]}")
+    
     resp = requests.post(url, params=params, data=json_body.encode("utf-8"),
                          headers=headers, timeout=15)
     result = resp.json()
     
     log(f"[微信] 创建草稿结果: {result}")
     
-    if result.get("errcode") == 0:
+    # 成功时返回 {'media_id': '...', '物品': []}，没有 errcode 字段
+    # 失败时返回 {'errcode': xxx, 'errmsg': '...'}
+    if result.get("errcode") == 0 or "media_id" in result:
         log(f"[微信] ✅ 草稿创建成功！")
         return True
     else:
