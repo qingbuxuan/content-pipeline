@@ -359,10 +359,13 @@ def upload_cover_for_draft(access_token, image_url):
 def create_draft(access_token, title, author, digest, content_html, media_id, thumb_url=""):
     log(f"[微信] 创建草稿箱文章...")
     title_utf8 = len(title.encode("utf-8"))
-    log(f"[微信] 标题: '{title}' ({title_utf8}B)")
+    log(f"[微信] 标题: '{title}' ({len(title)}字, {title_utf8}B)")
+    
+    # 如果标题超长，使用智能截断（优先在标点处断开）
     if title_utf8 > 64:
-        title = title.encode("utf-8")[:64].decode("utf-8", errors="ignore")
-        log(f"[微信] 标题截断: '{title}'")
+        # 在 node2_title 已经限制在 60B 内，这里是双重保险
+        title = truncate_title_smart(title, 64)
+        log(f"[微信] 标题智能截断: '{title}' ({len(title.encode('utf-8'))}B)")
     payload = {"articles": [{"title": title, "author": author, "digest": digest, "content": content_html,
                               "content_source_url": "", "thumb_media_id": media_id, "thumb_url": thumb_url}]}
     url = "https://api.weixin.qq.com/cgi-bin/draft/add"
@@ -520,7 +523,31 @@ def node1_collector():
     log(f"[1] 采集完成: {len(top5)}条 ({theme_name})")
     return top5
 
+def truncate_title_smart(title, max_bytes=60):
+    """智能截断标题：优先在标点/空格处截断，避免中间断开"""
+    if len(title.encode("utf-8")) <= max_bytes:
+        return title
+    
+    # 标点符号优先断开点
+    break_chars = ["，", "。", "！", "？", "、", "：", "；", " ", "｜", "|", "——", "…"]
+    
+    result = title
+    while len(result.encode("utf-8")) > max_bytes and result:
+        # 从后往前找断开点
+        found_break = False
+        for i in range(len(result) - 1, 0, -1):
+            if result[i] in break_chars:
+                result = result[:i]
+                found_break = True
+                break
+        
+        if not found_break:
+            result = result[:-1]
+    
+    return result if result else title[:20]  # 保底
+
 def node2_title():
+    """生成标题：要求 15-22 字（45-66 字节），确保完整可读"""
     weekday, theme_info = get_weekday_theme()
     try:
         with open(f"{DATA_DIR}/candidates.json", encoding="utf-8") as f:
@@ -530,26 +557,66 @@ def node2_title():
         items = [{"title": "健康养生"}]
     hot_topics = "\n".join([f"- {i['title']}" for i in items])
     theme_ctx = f"\n\n今日主题「{theme_info.get('name','')}」：{theme_info.get('theme','')}\n方向：{theme_info.get('direction','')}"
-    prompt = f"## 热榜话题\n{hot_topics}\n{theme_ctx}\n\n生成5个微信公众号爆款标题，选最优。最终标题不超过30字。\n\n候选标题（5个）：\n1. xxx\n2. xxx\n3. xxx\n4. xxx\n5. xxx\n\n【最终标题】：xxx"
-    log("[2] 生成标题...")
-    result = call_deepseek(prompt, THREE_HOOKS_SYSTEM, 0.8)
+    
+    # 生成标题提示词：明确字数限制
+    prompt = f"""## 热榜话题
+{hot_topics}
+{theme_ctx}
+
+## 标题生成要求
+生成 5 个微信公众号爆款标题候选，然后选择最优的一个作为最终标题。
+
+### 字数要求（重要）
+- 标题字数：15-22 个汉字
+- 字节限制：标题编码后不超过 60 字节（微信草稿箱限制 64 字节，留 4 字节余量）
+- 标题必须完整、可读、有吸引力
+
+### 标题风格
+- 用数字、疑问、对比制造好奇
+- 直接命中目标读者痛点
+- 避免标题党，内容要能兑现承诺
+
+## 输出格式
+候选标题（5个）：
+1. 15-22字标题
+2. 15-22字标题
+3. 15-22字标题
+4. 15-22字标题
+5. 15-22字标题
+
+【最终标题】：选择最好的一个标题（15-22字）
+"""
+    log("[2] 生成标题（15-22字）...")
+    result = call_deepseek(prompt, THREE_HOOKS_SYSTEM, 0.8, 800)
+    
     final_title = None
     if result:
         for line in result.split("\n"):
             if "最终标题" in line:
+                # 提取标题
                 t = line.split("】")[-1].strip() or line.split("：")[-1].strip()
-                if t and len(t) <= 50:
-                    final_title = t
-                    break
+                if t:
+                    # 检查字节数
+                    byte_len = len(t.encode("utf-8"))
+                    char_len = len(t)
+                    log(f"[2] 提取标题: '{t}' ({char_len}字, {byte_len}B)")
+                    if byte_len <= 60 and 10 <= char_len <= 25:
+                        final_title = t
+                        break
+                    elif byte_len > 60:
+                        log(f"[2] 标题超长({byte_len}B)，智能截断...")
+                        final_title = truncate_title_smart(t, 60)
+                        break
+    
+    # 如果没拿到合适标题，用默认值
     if not final_title:
-        final_title = items[0]["title"] if items else "健康养生"
-    b = (final_title or "健康养生").encode("utf-8")
-    while len(b) > 60:
-        final_title = final_title[:-1]
-        b = final_title.encode("utf-8")
+        fallback = items[0]["title"] if items else "健康养生小贴士"
+        final_title = truncate_title_smart(fallback, 60)
+        log(f"[2] 使用默认标题: {final_title}")
+    
     with open(f"{DATA_DIR}/title.json", "w", encoding="utf-8") as f:
         json.dump({"title": final_title, "theme": theme_info, "weekday": weekday}, f, ensure_ascii=False)
-    log(f"[2] 标题: {final_title}")
+    log(f"[2] 最终标题: '{final_title}' ({len(final_title)}字, {len(final_title.encode('utf-8'))}B)")
     return final_title
 
 def node3_outline():
