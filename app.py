@@ -157,7 +157,13 @@ def create_draft(access_token, title, author, digest, content_html, media_id, th
     params = {"access_token": access_token}
     headers = {"Content-Type": "application/json; charset=utf-8"}
     
-    resp = requests.post(url, params=params, json=payload, headers=headers, timeout=15)
+    # 关键修复：手动 JSON 序列化 + ensure_ascii=False
+    # requests.post(..., json=payload) 内部默认 ensure_ascii=True
+    # 这会把每个中文展开为 \uXXXX（6字节），导致51字节的标题变成120+字节
+    # 手动序列化保持 UTF-8 原生编码，51字节 < 64字节 限制
+    json_body = json.dumps(payload, ensure_ascii=False)
+    resp = requests.post(url, params=params, data=json_body.encode("utf-8"),
+                         headers=headers, timeout=15)
     result = resp.json()
     
     log(f"[微信] 创建草稿结果: {result}")
