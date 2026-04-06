@@ -124,12 +124,22 @@ def upload_cover_for_draft(access_token, image_url):
 def create_draft(access_token, title, author, digest, content_html, media_id, thumb_url=""):
     """创建草稿箱文章（使用永久素材 media_id）"""
     log(f"[微信] 创建草稿箱文章...")
-    log(f"[微信] 标题长度: {len(title)} 字符")
     
-    # 微信草稿箱标题限制 64 字符
-    if len(title) > 64:
-        log(f"[微信] ⚠️ 标题超长，自动截断至 64 字符")
-        title = title[:64]
+    # 精确诊断：字符数 + UTF-8 字节数
+    title_bytes = title.encode("utf-8")
+    title_chars = len(title)
+    title_utf8_bytes = len(title_bytes)
+    log(f"[微信] 标题: '{title}'")
+    log(f"[微信] 标题字符数: {title_chars}，UTF-8字节数: {title_utf8_bytes}")
+    log(f"[微信] 作者: '{author}' (UTF-8: {len(author.encode('utf-8'))} bytes)")
+    log(f"[微信] media_id: {media_id}")
+    
+    # 微信草稿箱：标题≤64字节（UTF-8），作者≤8字节（UTF-8）
+    if title_utf8_bytes > 64:
+        log(f"[微信] ⚠️ 标题超长({title_utf8_bytes}B)，自动截断")
+        title_bytes_trunc = title.encode("utf-8")[:64]
+        title = title_bytes_trunc.decode("utf-8", errors="ignore")
+        log(f"[微信] 截断后: '{title}' ({len(title.encode('utf-8'))}B)")
     
     payload = {
         "articles": [{
@@ -139,9 +149,7 @@ def create_draft(access_token, title, author, digest, content_html, media_id, th
             "content": content_html,
             "content_source_url": "",
             "thumb_media_id": media_id,
-            "thumb_url": thumb_url,          # 可选，封面图 URL
-            "need_open_comment": 1,
-            "only_fans_can_comment": 0,
+            "thumb_url": thumb_url,
         }]
     }
     
@@ -386,12 +394,12 @@ def push_draft_route():
         return jsonify({"success": False, "error": "Access Token 获取失败"}), 500
     
     # 上传封面图（永久素材）
-    media_id = upload_cover_for_draft(access_token, cover_url)
-    if not media_id:
+    media_result = upload_cover_for_draft(access_token, cover_url)
+    if not media_result:
         return jsonify({"success": False, "error": "封面图上传失败"}), 500
     
     # 创建草稿
-    success = create_draft(access_token, title, author, digest, content, media_id)
+    success = create_draft(access_token, title, author, digest, content, media_result["media_id"])
     
     if success:
         send_to_wechat(f"✅ 草稿推送成功：{title}", f"文章已推送至草稿箱，请及时发布。\n封面：{cover_url}")
