@@ -114,15 +114,22 @@ def upload_cover_for_draft(access_token, image_url):
     
     if "media_id" in upload_result:
         media_id = upload_result["media_id"]
+        thumb_url = upload_result.get("url", "")
         log(f"[微信] ✅ 永久素材 media_id: {media_id}")
-        return media_id
+        return {"media_id": media_id, "url": thumb_url}
     else:
         log(f"[微信] ❌ 永久素材上传失败: {upload_result}")
         return None
 
-def create_draft(access_token, title, author, digest, content_html, media_id):
+def create_draft(access_token, title, author, digest, content_html, media_id, thumb_url=""):
     """创建草稿箱文章（使用永久素材 media_id）"""
     log(f"[微信] 创建草稿箱文章...")
+    log(f"[微信] 标题长度: {len(title)} 字符")
+    
+    # 微信草稿箱标题限制 64 字符
+    if len(title) > 64:
+        log(f"[微信] ⚠️ 标题超长，自动截断至 64 字符")
+        title = title[:64]
     
     payload = {
         "articles": [{
@@ -131,10 +138,10 @@ def create_draft(access_token, title, author, digest, content_html, media_id):
             "digest": digest,
             "content": content_html,
             "content_source_url": "",
-            "thumb_media_id": media_id,   # 永久素材的 media_id
+            "thumb_media_id": media_id,
+            "thumb_url": thumb_url,          # 可选，封面图 URL
             "need_open_comment": 1,
             "only_fans_can_comment": 0,
-            "author": author,
         }]
     }
     
@@ -230,7 +237,7 @@ def send_to_wechat(title, content):
 # ========== 测试用示例文章 ==========
 
 TEST_ARTICLE = {
-    "title": "测试文章：子女不在身边，老人如何告别孤独感？",
+    "title": "子女不在身边，老人如何告别孤独感？",
     "author": "健康养生",
     "digest": "子女不在身边，空巢老人的孤独感如何化解？这三个方法值得尝试。",
     "content": """<p>李阿姨今年68岁，退休前是小学老师。老伴三年前走了，儿子在上海工作，一年回来两三次。</p>
@@ -284,10 +291,14 @@ def push_to_draft():
     
     # 3. 上传封面图（永久素材，用于草稿箱）
     log("[3] 上传封面图（永久素材）...")
-    media_id = upload_cover_for_draft(access_token, cover_url)
-    if not media_id:
+    media_result = upload_cover_for_draft(access_token, cover_url)
+    if not media_result:
         log("❌ 封面图上传失败，终止")
         return {"status": "error", "message": "封面图上传失败"}
+    
+    media_id = media_result["media_id"]
+    thumb_url = media_result.get("url", "")
+    log(f"[微信] media_id={media_id}, thumb_url={thumb_url[:50]}...")
     
     # 4. 创建草稿
     log("[4] 创建草稿箱...")
@@ -297,7 +308,8 @@ def push_to_draft():
         author=TEST_ARTICLE["author"],
         digest=TEST_ARTICLE["digest"],
         content_html=TEST_ARTICLE["content"],
-        media_id=media_id
+        media_id=media_id,
+        thumb_url=thumb_url
     )
     
     if success:
