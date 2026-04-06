@@ -442,15 +442,15 @@ def node6_send():
         title, article, source, summary, cover_url, cover_prompt, theme_info = "健康养生文章", "内容", "网络", "", "", "", {}
 
     weekday, _ = get_weekday_theme()
-    serverchan_content = f"""📝 新文章：
+    serverchan_content = f"""📝 新文章
 
-📅 周{WEEKDAY_NAMES[weekday]} · {theme_info.get('name', '健康养生')}
+📅 {WEEKDAY_NAMES[weekday]} · {theme_info.get('name', '健康养生')}
 📌 今日主题：{theme_info.get('theme', '')}
 📊 素材来源：{source}
 
 ━━━━━━━━━━━━━━━
 
-🏷️ 标题：{title}
+🏷️ 标题{title}
 
 📋 摘要：{summary}
 
@@ -467,7 +467,7 @@ def node6_send():
 
 ━━━━━━━━━━━━━━━
 👆 以上是今日生成的文章内容"""
-    result = send_to_wechat(f"📝 新文章：{title}", serverchan_content)
+    result = send_to_wechat(f"📝 新文章{title}", serverchan_content)
 
     # === 微信草稿箱推送 ===
     draft_ok = False
