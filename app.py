@@ -98,7 +98,7 @@ def generate_cover_image(prompt):
                     results = status_result.get("output", {}).get("results", [])
                     if results:
                         image_url = results[0].get("url", "")
-                        log(f"[封面] ✅ 生成成功: {image_url}")
+                        log(f"[封面] 生成成功: {image_url}")
                         return image_url
                 elif task_status == "FAILED":
                     log(f"[封面] 生成失败: {status_result}")
@@ -113,7 +113,7 @@ def generate_cover_image(prompt):
 
 def get_access_token():
     if not WX_APPID or not WX_APPSECRET:
-        log("[微信] 缺少 WX_APPID 或 WX_APPSECRET")
+        log("[微信] 缺少 WX_APPID 或 WX_APPSECRET，跳过草稿箱推送")
         return None
     url = "https://api.weixin.qq.com/cgi-bin/token"
     params = {"grant_type": "client_credential", "appid": WX_APPID, "secret": WX_APPSECRET}
@@ -147,7 +147,7 @@ def upload_cover_for_draft(access_token, image_url):
         img = bg
     elif img.mode != "RGB":
         img = img.convert("RGB")
-    tgt_w, tgt_h = 900, 506
+    tgt_w = 900
     if img.width > tgt_w:
         ratio = tgt_w / img.width
         img = img.resize((tgt_w, int(img.height * ratio)), Image.LANCZOS)
@@ -164,9 +164,9 @@ def upload_cover_for_draft(access_token, image_url):
     if "media_id" in upload_result:
         media_id = upload_result["media_id"]
         thumb_url = upload_result.get("url", "")
-        log(f"[微信] ✅ media_id: {media_id}")
+        log(f"[微信] media_id: {media_id}")
         return {"media_id": media_id, "url": thumb_url}
-    log(f"[微信] ❌ 上传失败: {upload_result}")
+    log(f"[微信] 上传失败: {upload_result}")
     return None
 
 def create_draft(access_token, title, author, digest, content_html, media_id, thumb_url=""):
@@ -175,7 +175,7 @@ def create_draft(access_token, title, author, digest, content_html, media_id, th
     log(f"[微信] 标题: '{title}' ({title_utf8}B)")
     if title_utf8 > 64:
         title = title.encode("utf-8")[:64].decode("utf-8", errors="ignore")
-        log(f"[微信] ⚠️ 截断: '{title}'")
+        log(f"[微信] 标题截断: '{title}'")
     payload = {"articles": [{"title": title, "author": author, "digest": digest, "content": content_html,
                               "content_source_url": "", "thumb_media_id": media_id, "thumb_url": thumb_url}]}
     url = "https://api.weixin.qq.com/cgi-bin/draft/add"
@@ -186,24 +186,20 @@ def create_draft(access_token, title, author, digest, content_html, media_id, th
     result = resp.json()
     log(f"[微信] 创建结果: {result}")
     if result.get("errcode") == 0 or "media_id" in result:
-        log("[微信] ✅ 草稿创建成功！")
+        log("[微信] 草稿创建成功！")
         return True
-    log(f"[微信] ❌ 草稿创建失败: {result}")
+    log(f"[微信] 草稿创建失败: {result}")
     return False
 
 def push_article_to_draft(title, author, digest, content_html, cover_url):
-    if not WX_APPID or not WX_APPSECRET:
-        log("[草稿] 缺少微信公众号凭证，跳过")
-        return False
     access_token = get_access_token()
     if not access_token:
         return False
     media_result = upload_cover_for_draft(access_token, cover_url)
     if not media_result:
         return False
-    success = create_draft(access_token, title, author, digest, content_html,
-                           media_result["media_id"], media_result.get("url", ""))
-    return success
+    return create_draft(access_token, title, author, digest, content_html,
+                         media_result["media_id"], media_result.get("url", ""))
 
 THREE_HOOKS_SYSTEM = '你是一位顶级微信公众号爆款文章写作大师，擅长用"三把钩子"写作法创作高转发、高点赞的爆款文章。'
 
@@ -218,10 +214,10 @@ THREE_HOOKS_ARTICLE_PROMPT = """## 任务
 
 ## 写作要求
 1. 字数：1200-1500字，结尾附5个话题标签 #话题标签
-2. 去结构化：口语化，每段落≤5行，不用1、2、3排序
+2. 去结构化：口语化，每段落不超过5行，不用1、2、3排序
 3. 去AI味：不用首先/其次/再次/最后/总之/综上所述，不用破折号
 4. 内容原创：严禁抄袭，有立场有情绪，不要中立
-5. 排版：每段落≤5行，可用emoji分段
+5. 排版：每段落不超过5行，可用emoji分段
 
 ### 三把钩子写作法
 **第一把钩子**：开头一秒钩住读者——目标读者画像+扎心问题+痛点场景+好处承诺
@@ -250,7 +246,8 @@ COVER_PROMPT = """## 任务
 
 ## 标题
 {title}
-## 主题摘要
+
+## 正文摘要
 {article_summary}
 
 ## 要求
@@ -326,17 +323,18 @@ def node1_collector():
                 top5.append({"title": item, "source": f"{theme_name}推荐", "score": 5})
     with open(f"{DATA_DIR}/candidates.json", "w", encoding="utf-8") as f:
         json.dump({"items": top5, "weekday": weekday, "theme": theme_info}, f, ensure_ascii=False)
-    log(f"[1] ✅ 采集完成: {len(top5)}条 ({theme_name})")
+    log(f"[1] 采集完成: {len(top5)}条 ({theme_name})")
     return top5
 
 def node2_title():
+    weekday, theme_info = get_weekday_theme()
     try:
         with open(f"{DATA_DIR}/candidates.json", encoding="utf-8") as f:
             data = json.load(f)
-            items, theme_info = data["items"], data.get("theme", {})
-        hot_topics = "\n".join([f"- {i['title']}" for i in items])
+            items = data.get("items", [])
     except:
-        hot_topics, items, theme_info = "健康养生", [{"title": "健康养生"}], {}
+        items = [{"title": "健康养生"}]
+    hot_topics = "\n".join([f"- {i['title']}" for i in items])
     theme_ctx = f"\n\n今日主题「{theme_info.get('name','')}」：{theme_info.get('theme','')}\n方向：{theme_info.get('direction','')}"
     prompt = f"## 热榜话题\n{hot_topics}\n{theme_ctx}\n\n生成5个微信公众号爆款标题，选最优。最终标题不超过30字。\n\n候选标题（5个）：\n1. xxx\n2. xxx\n3. xxx\n4. xxx\n5. xxx\n\n【最终标题】：xxx"
     log("[2] 生成标题...")
@@ -351,21 +349,24 @@ def node2_title():
                     break
     if not final_title:
         final_title = items[0]["title"] if items else "健康养生"
-    while len(final_title.encode("utf-8")) > 60:
+    b = (final_title or "健康养生").encode("utf-8")
+    while len(b) > 60:
         final_title = final_title[:-1]
+        b = final_title.encode("utf-8")
     with open(f"{DATA_DIR}/title.json", "w", encoding="utf-8") as f:
         json.dump({"title": final_title, "theme": theme_info}, f, ensure_ascii=False)
-    log(f"[2] ✅ 标题: {final_title}")
+    log(f"[2] 标题: {final_title}")
     return final_title
 
 def node3_outline():
     try:
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
-            title = json.load(f)["title"]
+            title_data = json.load(f)
         with open(f"{DATA_DIR}/candidates.json", encoding="utf-8") as f:
-            data = json.load(f)
-            source = data["items"][0].get("source", "网络")
-            theme_info = data.get("theme", {})
+            cand_data = json.load(f)
+        title = title_data["title"]
+        source = cand_data.get("items", [{}])[0].get("source", "网络")
+        theme_info = title_data.get("theme", {})
     except:
         title, source, theme_info = "健康养生", "网络", {}
     theme_ctx = f"\n\n今日主题「{theme_info.get('name','')}」：{theme_info.get('theme','')}"
@@ -374,17 +375,20 @@ def node3_outline():
     result = call_deepseek(prompt, THREE_HOOKS_SYSTEM, 0.7)
     with open(f"{DATA_DIR}/outline.json", "w", encoding="utf-8") as f:
         json.dump({"outline": result or "基础大纲", "title": title, "theme": theme_info}, f, ensure_ascii=False)
-    log("[3] ✅ 大纲完成")
+    log("[3] 大纲完成")
     return result
 
 def node4_article():
     try:
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
-            title = json.load(f)["title"]
+            title_data = json.load(f)
         with open(f"{DATA_DIR}/outline.json", encoding="utf-8") as f:
-            outline = json.load(f).get("outline", "")
+            outline_data = json.load(f)
         with open(f"{DATA_DIR}/candidates.json", encoding="utf-8") as f:
-            source = json.load(f)["items"][0].get("source", "网络")
+            cand_data = json.load(f)
+        title = title_data["title"]
+        outline = outline_data.get("outline", "")
+        source = cand_data.get("items", [{}])[0].get("source", "网络")
     except:
         title, outline, source = "健康养生", "", "网络"
     log("[4] 生成正文...")
@@ -393,15 +397,17 @@ def node4_article():
     article = result or f"【{title}】这是一篇健康养生文章。\n\n#健康 #养生"
     with open(f"{DATA_DIR}/article.json", "w", encoding="utf-8") as f:
         json.dump({"title": title, "article": article, "source": source}, f, ensure_ascii=False)
-    log(f"[4] ✅ 正文: {len(article)}字")
+    log(f"[4] 正文: {len(article)}字")
     return article
 
 def node5_summary_and_cover():
     try:
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
-            title = json.load(f)["title"]
+            title_data = json.load(f)
         with open(f"{DATA_DIR}/article.json", encoding="utf-8") as f:
-            article = json.load(f)["article"]
+            article_data = json.load(f)
+        title = title_data["title"]
+        article = article_data["article"]
     except:
         title, article = "健康养生", "内容"
     log("[5] 生成摘要...")
@@ -413,27 +419,29 @@ def node5_summary_and_cover():
     cover_url = generate_cover_image(cover_prompt)
     with open(f"{DATA_DIR}/summary.json", "w", encoding="utf-8") as f:
         json.dump({"summary": summary, "cover_prompt": cover_prompt, "cover_url": cover_url}, f, ensure_ascii=False)
-    log(f"[5] ✅ 摘要({len(summary)}字) + 封面")
+    log(f"[5] 摘要({len(summary)}字) + 封面")
     return summary, cover_prompt, cover_url
 
 def node6_send():
     try:
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
-            title = json.load(f)["title"]
-            theme_info = json.load(f).get("theme", {})
+            title_data = json.load(f)
         with open(f"{DATA_DIR}/article.json", encoding="utf-8") as f:
-            article = json.load(f).get("article", "")
-            source = json.load(f).get("source", "网络")
+            article_data = json.load(f)
         with open(f"{DATA_DIR}/summary.json", encoding="utf-8") as f:
-            data = json.load(f)
-            summary, cover_prompt, cover_url = data.get("summary", ""), data.get("cover_prompt", ""), data.get("cover_url", "")
+            summary_data = json.load(f)
+        title = title_data["title"]
+        theme_info = title_data.get("theme", {})
+        article = article_data.get("article", "")
+        source = article_data.get("source", "网络")
+        summary = summary_data.get("summary", "")
+        cover_prompt = summary_data.get("cover_prompt", "")
+        cover_url = summary_data.get("cover_url", "")
     except Exception as e:
         log(f"[6] 读取数据失败: {e}")
         title, article, source, summary, cover_url, cover_prompt, theme_info = "健康养生文章", "内容", "网络", "", "", "", {}
-    weekday, _ = get_weekday_theme()
-    theme_tag = f"📌 **今日主题：** {theme_info.get('name', '健康养生')} · {theme_info.get('theme', '')}"
 
-    # === Server酱推送（新格式）===
+    weekday, _ = get_weekday_theme()
     serverchan_content = f"""📝 新文章：
 
 📅 周{WEEKDAY_NAMES[weekday]} · {theme_info.get('name', '健康养生')}
@@ -465,24 +473,24 @@ def node6_send():
     draft_ok = False
     if cover_url:
         log("[6] 推送至微信草稿箱...")
-        digest = summary[:54] + "…" if len(summary) > 54 else summary
+        digest = (summary[:54] + "…") if len(summary) > 54 else summary
         author = theme_info.get("name", "健康养生")
         draft_ok = push_article_to_draft(title, author, digest, article, cover_url)
         if draft_ok:
-            log("[6] ✅ 草稿箱推送成功！")
+            log("[6] 草稿箱推送成功！")
             send_to_wechat("✅ 草稿箱推送成功",
                            f"📝 《{title}》已推送至微信公众号草稿箱\n🎨 封面：{cover_url}\n\n请登录公众号后台 → 内容与互动 → 草稿箱 查看并发布。")
         else:
-            log("[6] ⚠️ 草稿箱推送失败（Server酱已成功）")
+            log("[6] 草稿箱推送失败（Server酱已成功）")
 
     if result.get("code") == 0:
-        log("[6] ✅ Server酱发送成功！")
+        log("[6] Server酱发送成功！")
         return {"status": "success", "cover_url": cover_url, "draft": draft_ok}
     return {"status": "failed", "error": result}
 
 @app.route("/")
 def index():
-    return "✅ 内容流水线 v2.0（Server酱详细格式 + 微信草稿箱）<br>• GET /trigger → 触发完整流水线<br>• GET /test_draft → 测试草稿箱<br>• GET /test_status → 检查配置"
+    return "✅ 内容流水线 v2.1（修复json.load重复读取bug）<br>• GET /trigger?force=1 → 强制触发完整流程<br>• GET /test_draft → 测试草稿箱<br>• GET /test_status → 检查配置"
 
 @app.route("/test_status")
 def test_status():
