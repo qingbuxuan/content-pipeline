@@ -16,10 +16,10 @@ PORT = int(os.environ.get("PORT", 10000))
 DATA_DIR = "/tmp/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
-SERVERCHAN_KEY = os.environ.get("SERVERCHAN_KEY", "SCT333499TpvZQWzbvJcMfDxo7BmL8MsrV")
-DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "sk-6e2b402410694b50af206daee4f017bc")
+SERVERCHAN_KEY = os.environ.get("SERVERCHAN_KEY", "")
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")
 DEEPSEEK_API_URL = "https://api.deepseek.com/chat/completions"
-WANXIANG_API_KEY = os.environ.get("WANXIANG_API_KEY", "sk-de7984bb01c84a2bb136167006864fe2")
+WANXIANG_API_KEY = os.environ.get("WANXIANG_API_KEY", "")
 WX_APPID = os.environ.get("WX_APPID", "")
 WX_APPSECRET = os.environ.get("WX_APPSECRET", "")
 
@@ -863,6 +863,15 @@ def trigger():
     force = request.args.get("force", "0") == "1"
     today = beijing_now().strftime('%Y%m%d')
     lock_file = f"{DATA_DIR}/executed_{today}.lock"
+
+    # ⏱️ 5分钟冷却锁，防止频繁触发
+    recent_lock = f"{DATA_DIR}/recent_trigger.lock"
+    if os.path.exists(recent_lock):
+        age = time.time() - os.path.getmtime(recent_lock)
+        if age < 300 and not force:
+            log(f"⏳ 触发太频繁，距上次 {int(age)}s，请{int(300-age)}s后再试")
+            return jsonify({"success": False, "error": f"冷却中，请{int(300-age)}s后再试（已过{int(age)}s）"}), 429
+
     if os.path.exists(lock_file) and not force:
         log("⏭️ 今日已执行，跳过")
         return jsonify({"success": True, "result": {"status": "skipped"}})
@@ -870,6 +879,10 @@ def trigger():
     log("🚀 流水线启动")
     log("=" * 50)
     try:
+        # ⏱️ 更新冷却锁
+        with open(recent_lock, 'w') as f:
+            f.write(datetime.now().isoformat())
+
         node1_collector()
         node2_title()
         node3_outline()
