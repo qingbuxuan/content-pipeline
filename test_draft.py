@@ -19,14 +19,14 @@ DATA_DIR = "/tmp/data"
 os.makedirs(DATA_DIR, exist_ok=True)
 
 # Server酱配置（备用推送）
-SERVERCHAN_KEY = os.environ.get("SERVERCHAN_KEY", "SCT333499TpvZQWzbvJcMfDxo7BmL8MsrV")
+SERVERCHAN_KEY = os.environ.get("SERVERCHAN_KEY", "")
 
 # 微信公众平台配置（从环境变量读取）
 WX_APPID = os.environ.get("WX_APPID", "")
 WX_APPSECRET = os.environ.get("WX_APPSECRET", "")
 
 # 通义万相配置（生成封面图）
-WANXIANG_API_KEY = os.environ.get("WANXIANG_API_KEY", "sk-de7984bb01c84a2bb136167006864fe2")
+WANXIANG_API_KEY = os.environ.get("WANXIANG_API_KEY", "")
 
 def log(msg):
     print(f"[{datetime.now()}] {msg}", flush=True)

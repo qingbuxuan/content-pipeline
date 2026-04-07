@@ -1,0 +1,29 @@
+# 环境变量（敏感信息）
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+venv/
+.venv/
+
+# 数据文件
+*.json
+*.lock
+*.txt
+!requirements.txt
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 日志
+*.log
+
+# 临时文件
+/tmp/
