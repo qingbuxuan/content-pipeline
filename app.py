@@ -155,6 +155,110 @@ WEEKLY_THEMES = {k: {
     "direction": v["direction"]
 } for k, v in STYLE_THEMES.items()}
 
+# ========== 关键词分级权重系统 ==========
+# 核心词(+5分)：直接命中主题，用户高关注
+# 相关词(+3分)：与主题相关，有参考价值
+# 边缘词(+1分)：泛健康话题，可扩展内容
+
+KEYWORD_WEIGHTS = {
+    0: {  # 周一 · 情感心理
+        "core": ["孤独", "空巢", "独居", "陪伴", "养老", "退休"],      # +5
+        "related": ["子女", "父母", "家庭", "亲情", "代际", "思念"],    # +3
+        "edge": ["老年", "中年", "心理", "情感", "寂寞", "沟通"]        # +1
+    },
+    1: {  # 周二 · 养生生活
+        "core": ["养生", "中医", "食疗", "药食同源", "节气", "四季"],   # +5
+        "related": ["饮食", "营养", "早餐", "晚餐", "食谱", "进补"],     # +3
+        "edge": ["健康", "体质", "抗炎", "健脾", "养肝", "运动"]         # +1
+    },
+    2: {  # 周三 · 慢病管理
+        "core": ["高血压", "糖尿病", "高血脂", "三高", "心梗", "脑梗"],  # +5
+        "related": ["心血管", "心脏病", "血糖", "血压", "血脂", "用药"],  # +3
+        "edge": ["慢性病", "体检", "服药", "胆固醇", "中风", "护理"]     # +1
+    },
+    3: {  # 周四 · 情绪养生
+        "core": ["抑郁", "焦虑", "失眠", "情绪", "心理健康"],           # +5
+        "related": ["孤独", "悲观", "心态", "情绪管理", "心理"],         # +3
+        "edge": ["老年痴呆", "阿尔茨海默", "记忆", "认知", "精神"]       # +1
+    },
+    4: {  # 周五 · 生活品质
+        "core": ["消费", "购物", "保健品", "体检", "保险", "理财"],      # +5
+        "related": ["退休", "养老金", "省钱", "适老化", "产品", "测评"],  # +3
+        "edge": ["礼物", "避坑", "营养品", "家用", "医疗器械", "消费升级"] # +1
+    },
+    5: {  # 周六 · 科技健康
+        "core": ["手机", "APP", "智能", "科技", "AI", "人工智能"],       # +5
+        "related": ["健康码", "挂号", "预约", "微信", "视频", "网络"],   # +3
+        "edge": ["智能手表", "血压计", "血糖仪", "健康监测", "在线问诊"] # +1
+    },
+    6: {  # 周日 · 科普急救
+        "core": ["急救", "心梗", "中风", "脑梗", "猝死", "心肺复苏"],    # +5
+        "related": ["家庭药箱", "常备药", "用药安全", "心脏病", "胸痛"],  # +3
+        "edge": ["呼吸困难", "跌倒", "烫伤", "噎住", "异物", "急救常识"] # +1
+    }
+}
+
+# ========== 固定话题池（热榜不足时的备选）==========
+TOPIC_POOL = {
+    0: [  # 周一 · 情感心理
+        "子女不在身边，老人如何告别孤独感",
+        "退休后找不到存在感怎么办",
+        "和子女沟通总是吵架，问题出在哪",
+        "老伴走了，一个人怎么过日子",
+        "空巢老人的三个心理自救法",
+        "代际沟通：如何让子女理解你的想法"
+    ],
+    1: [  # 周二 · 养生生活
+        "春季养肝正当时，这5种食物要多吃",
+        "中老年人早餐吃什么最养胃",
+        "药食同源：厨房里的养生智慧",
+        "一天三顿怎么吃，营养师给你划重点",
+        "节气养生：顺时而动的健康智慧",
+        "体质不同，养生方法也不同"
+    ],
+    2: [  # 周三 · 慢病管理
+        "高血压患者必知的5个用药误区",
+        "糖尿病饮食：什么能吃什么不能吃",
+        "三高人群的日常监测指南",
+        "血脂高了怎么办，医生这样说",
+        "心血管病人的运动注意事项",
+        "慢病用药：这些错误千万别犯"
+    ],
+    3: [  # 周四 · 情绪养生
+        "老年人抑郁的5个信号，家人要警惕",
+        "失眠睡不着，试试这几个方法",
+        "焦虑情绪如何自我调节",
+        "保持乐观心态的3个日常习惯",
+        "孤独感伤身，如何排解",
+        "情绪急救：坏情绪来了怎么办"
+    ],
+    4: [  # 周五 · 生活品质
+        "保健品选购避坑指南",
+        "体检项目怎么选，钱花在刀刃上",
+        "适老化产品测评：哪些值得买",
+        "退休理财：守住养老钱",
+        "家用医疗器械选购要点",
+        "消费陷阱：老人最容易上当的套路"
+    ],
+    5: [  # 周六 · 科技健康
+        "手机挂号教程：一步步教你操作",
+        "智能血压计怎么选怎么用",
+        "健康码、行程码使用指南",
+        "微信视频通话：和子女面对面",
+        "健康监测APP推荐与使用",
+        "AI健康助手：科技帮你管健康"
+    ],
+    6: [  # 周日 · 科普急救
+        "心梗急救：黄金4分钟做什么",
+        "中风识别：FAST法则要牢记",
+        "家庭常备药品清单",
+        "跌倒后的正确处理方法",
+        "噎住了怎么办，海姆立克急救法",
+        "用药安全：这些药不能一起吃"
+    ]
+}
+
+# 通用健康关键词（兜底匹配）
 KEYWORDS = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感", "饮食", "减肥", "健身", "血压", "血糖", "心脏", "癌症", "疫苗", "医院", "医生", "药品", "保健", "体检", "养老", "老年", "中年", "退休", "家庭", "婚姻", "孩子"]
 
 # ========== Markdown → HTML 样式转换 ==========
@@ -464,15 +568,25 @@ def get_weekday_theme():
     log(f"[主题] 今天{WEEKDAY_NAMES[weekday]} · {theme_info['name']} · {theme_info['theme']}")
     return weekday, theme_info
 
-def score_item(title, theme_keywords=None):
+def score_item(title, weekday=None):
+    """智能评分：主题关键词分级权重 + 通用关键词兜底"""
     score = 0
+    # 通用健康关键词（+1分）
     for kw in KEYWORDS:
         if kw in title:
             score += 1
-    if theme_keywords:
-        for kw in theme_keywords:
+    # 主题关键词分级权重
+    if weekday is not None and weekday in KEYWORD_WEIGHTS:
+        weights = KEYWORD_WEIGHTS[weekday]
+        for kw in weights.get("core", []):
+            if kw in title:
+                score += 5
+        for kw in weights.get("related", []):
             if kw in title:
                 score += 3
+        for kw in weights.get("edge", []):
+            if kw in title:
+                score += 1
     return score
 
 def node1_collector():
@@ -486,7 +600,7 @@ def node1_collector():
                          headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         for item in r.json().get("data", {}).get("content", [])[:30]:
             t = item.get("query", "")
-            all_items.append({"title": t, "source": "百度", "score": score_item(t, theme_keywords)})
+            all_items.append({"title": t, "source": "百度", "score": score_item(t, weekday)})
     except Exception as e:
         log(f"[1] 百度失败: {e}")
     try:
@@ -495,7 +609,7 @@ def node1_collector():
                          headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         for item in r.json().get("data", {}).get("realtime", [])[:30]:
             t = item.get("word", "")
-            all_items.append({"title": t, "source": "微博", "score": score_item(t, theme_keywords)})
+            all_items.append({"title": t, "source": "微博", "score": score_item(t, weekday)})
     except Exception as e:
         log(f"[1] 微博失败: {e}")
     try:
@@ -504,23 +618,41 @@ def node1_collector():
                          headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
         for item in r.json().get("data", [])[:30]:
             t = item.get("Title", "")
-            all_items.append({"title": t, "source": "头条", "score": score_item(t, theme_keywords)})
+            all_items.append({"title": t, "source": "头条", "score": score_item(t, weekday)})
     except Exception as e:
         log(f"[1] 头条失败: {e}")
+    
+    # 筛选相关话题（score > 0）
     relevant = [i for i in all_items if i["score"] > 0]
     relevant.sort(key=lambda x: x["score"], reverse=True)
     top5 = relevant[:5]
+    
+    # 热榜素材不足时，从固定话题池补充
     if len(top5) < 3:
-        log("[1] 素材不足，生成主题话题...")
+        log(f"[1] 热榜素材不足（{len(top5)}条），从话题池补充...")
+        pool = TOPIC_POOL.get(weekday, [])
+        for topic in pool[:3]:
+            # 避免重复
+            if not any(t["title"] == topic for t in top5):
+                top5.append({"title": topic, "source": f"{theme_name}话题池", "score": 8})
+        log(f"[1] 话题池补充后：{len(top5)}条")
+    
+    # 如果还不够（极端情况），AI生成
+    if len(top5) < 3:
+        log("[1] 话题池也不够，AI生成话题...")
         prompt = f"根据主题「{theme_info['theme']}」方向「{theme_info['direction']}」生成3个中老年公众号话题，每行一个："
         result = call_deepseek(prompt, "你是一个专业的内容策划师", 0.8, 500)
         if result:
             lines = [l.strip() for l in result.split("\n") if l.strip() and len(l.strip()) > 5]
             for item in lines[:3]:
-                top5.append({"title": item, "source": f"{theme_name}推荐", "score": 5})
+                if not any(t["title"] == item for t in top5):
+                    top5.append({"title": item, "source": f"{theme_name}AI生成", "score": 5})
+    
     with open(f"{DATA_DIR}/candidates.json", "w", encoding="utf-8") as f:
         json.dump({"items": top5, "weekday": weekday, "theme": theme_info}, f, ensure_ascii=False)
     log(f"[1] 采集完成: {len(top5)}条 ({theme_name})")
+    for i, item in enumerate(top5, 1):
+        log(f"    {i}. [{item['score']}分] {item['title']} ({item['source']})")
     return top5
 
 def truncate_title_smart(title, max_bytes=60):
@@ -758,11 +890,12 @@ def node6_send():
 # ========== Flask 路由 ==========
 @app.route("/")
 def index():
-    return """✅ 内容流水线 v3.0（七天主题样式系统）
+    return """✅ 内容流水线 v4.0（七天主题样式系统 + 分级关键词 + 话题池）
 <br>• GET /trigger?force=1 → 强制触发完整流程
 <br>• GET /test_draft → 测试草稿箱
 <br>• GET /test_status → 检查配置
-<br>• GET /test_style → 预览当天样式"""
+<br>• GET /test_style → 预览当天样式
+<br>• GET /test_topic_pool → 查看话题池与关键词权重"""
 
 @app.route("/test_status")
 def test_status():
@@ -809,6 +942,27 @@ def test_style():
 <hr>
 {html}
 </body></html>"""
+
+@app.route("/test_topic_pool")
+def test_topic_pool():
+    """查看所有主题的话题池和关键词权重"""
+    html = "<h1>📚 话题池与关键词权重</h1>"
+    for weekday in range(7):
+        theme = STYLE_THEMES[weekday]
+        weights = KEYWORD_WEIGHTS.get(weekday, {})
+        pool = TOPIC_POOL.get(weekday, [])
+        
+        html += f"""<h2>{WEEKDAY_NAMES[weekday]} · {theme['name']}</h2>
+<p><b>主题：</b>{theme['theme']}</p>
+<p><b>方向：</b>{theme['direction']}</p>
+<h3>关键词权重</h3>
+<p><span style="color:#c62828;">核心词(+5)：</span>{'、'.join(weights.get('core', []))}</p>
+<p><span style="color:#e65100;">相关词(+3)：</span>{'、'.join(weights.get('related', []))}</p>
+<p><span style="color:#1565c0;">边缘词(+1)：</span>{'、'.join(weights.get('edge', []))}</p>
+<h3>固定话题池</h3>
+<ol>{''.join(f'<li>{t}</li>' for t in pool)}</ol>
+<hr>"""
+    return html
 
 @app.route("/test_draft")
 def test_draft():
