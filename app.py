@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, request
+﻿from flask import Flask, jsonify, request
 import os, json, requests, base64, hashlib, hmac, time, urllib.parse, io, re
 from datetime import datetime, timezone, timedelta
 from PIL import Image
@@ -418,11 +418,23 @@ def get_access_token():
 
 def upload_cover_for_draft(access_token, image_url):
     log(f"[微信] 下载封面图: {image_url}")
-    img_resp = requests.get(image_url, timeout=30)
-    if img_resp.status_code != 200:
-        log(f"[微信] 图片下载失败: HTTP {img_resp.status_code}")
-        return None
-    original_bytes = img_resp.content
+    # 支持两种格式：URL 或 data:image/png;base64,...
+    if image_url.startswith("data:"):
+        # 本地生成的 base64 图片
+        log("[微信] 本地图片降级方案")
+        match = re.match(r"data:image/\w+;base64,(.+)", image_url)
+        if match:
+            original_bytes = base64.b64decode(match.group(1))
+        else:
+            log("[微信] Base64 格式解析失败")
+            return None
+    else:
+        # 远程 URL
+        img_resp = requests.get(image_url, timeout=30)
+        if img_resp.status_code != 200:
+            log(f"[微信] 图片下载失败: HTTP {img_resp.status_code}")
+            return None
+        original_bytes = img_resp.content
     log(f"[微信] 原始: {len(original_bytes)/1024:.1f} KB")
     try:
         img = Image.open(io.BytesIO(original_bytes))
@@ -851,6 +863,10 @@ def node5_summary_and_cover():
     cover_prompt = call_deepseek(COVER_PROMPT.format(title=title, article_summary=summary),
                                   "AI绘画工程师", 0.8, 500) or "A healthy lifestyle scene, 16:9, high quality."
     cover_url = generate_cover_image(cover_prompt)
+    if not cover_url:
+        log("[5] 通义万相失败，使用降级封面")
+        weekday, theme_info = get_weekday_theme()
+        cover_url = generate_fallback_cover(theme_info)
     with open(f"{DATA_DIR}/summary.json", "w", encoding="utf-8") as f:
         json.dump({"summary": summary, "cover_prompt": cover_prompt, "cover_url": cover_url}, f, ensure_ascii=False)
     log(f"[5] 摘要({len(summary)}字) + 封面")

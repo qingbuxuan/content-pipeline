@@ -298,6 +298,56 @@ def generate_cover_image(prompt):
         log(f"[封面] 异常: {e}")
         return None
 
+def generate_fallback_cover(theme_info):
+    """降级方案：Pillow生成位图封面，颜色与主题一致"""
+    log("[封面] 通义万相失败，启动降级方案（Pillow位图）")
+    try:
+        W, H = 1280, 720
+        bg = Image.new("RGB", (W, H))
+        draw = __import__("PIL.ImageDraw", fromlist=["ImageDraw"]).ImageDraw
+        theme_name = theme_info.get("name", "")
+        if any(kw in theme_name for kw in ["情感", "心理", "孤独", "情绪"]):
+            bg_color, accent1, accent2, text_color = "#1a1a2e", "#e94560", "#f1f1f1", "#f1f1f1"
+        elif any(kw in theme_name for kw in ["养生", "食疗", "生活"]):
+            bg_color, accent1, accent2, text_color = "#2d3436", "#00b894", "#fdcb6e", "#ffeaa7"
+        elif any(kw in theme_name for kw in ["慢病", "健康", "医疗"]):
+            bg_color, accent1, accent2, text_color = "#2c3e50", "#3498db", "#1abc9c", "#ecf0f1"
+        elif any(kw in theme_name for kw in ["科技", "智能"]):
+            bg_color, accent1, accent2, text_color = "#0f0f23", "#00d2ff", "#7b2ff7", "#f5f5f5"
+        else:
+            bg_color, accent1, accent2, text_color = "#2d3436", "#e17055", "#fdcb6e", "#f5f6fa"
+        def hex_to_rgb(h): return tuple(int(h[i:i+2], 16) for i in (1, 3, 5))
+        bg_rgb = hex_to_rgb(bg_color)
+        for y in range(H):
+            shade = int(20 * (1 - y / H))
+            r = max(0, bg_rgb[0] - shade)
+            g = max(0, bg_rgb[1] - shade)
+            b = max(0, bg_rgb[2] - shade)
+            for x in range(W):
+                bg.putpixel((x, y), (r, g, b))
+        d = draw(bg)
+        d.ellipse([int(W*0.72), int(H*0.55), W+50, H+50], fill=hex_to_rgb(accent1), outline=None)
+        d.ellipse([-60, -90, int(W*0.4), int(H*0.35)], fill=hex_to_rgb(accent2)+(64,), outline=None)
+        try:
+            from PIL import ImageFont
+            font_lg = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 68)
+            font_sm = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 32)
+        except Exception:
+            font_lg = ImageFont.load_default()
+            font_sm = font_lg
+        day_text = WEEKDAY_NAMES[beijing_now().weekday()]
+        d.text((W//2, H//2 - 50), f"[ {day_text} ]", fill=hex_to_rgb(text_color), font=font_sm, anchor="mm")
+        d.text((W//2, H//2 + 20), theme_info.get("name", "健康生活"), fill=(255,255,255), font=font_lg, anchor="mm")
+        d.text((W//2, H//2 + 95), "HEALTH & WELLNESS", fill=hex_to_rgb(text_color), font=font_sm, anchor="mm")
+        output = io.BytesIO()
+        bg.save(output, format="PNG")
+        b64 = base64.b64encode(output.getvalue()).decode("utf-8")
+        log("[封面] 降级图片生成成功")
+        return f"data:image/png;base64,{b64}"
+    except Exception as e:
+        log(f"[封面] 降级生成失败: {e}")
+        return None
+
 def get_access_token():
     if not WX_APPID or not WX_APPSECRET:
         log("[微信] 缺少 WX_APPID 或 WX_APPSECRET，跳过草稿箱推送")
@@ -314,11 +364,20 @@ def get_access_token():
 
 def upload_cover_for_draft(access_token, image_url):
     log(f"[微信] 下载封面图: {image_url}")
-    img_resp = requests.get(image_url, timeout=30)
-    if img_resp.status_code != 200:
-        log(f"[微信] 图片下载失败: HTTP {img_resp.status_code}")
-        return None
-    original_bytes = img_resp.content
+    if image_url.startswith("data:"):
+        log("[微信] 本地图片降级方案")
+        match = re.match(r"data:image/\w+;base64,(.+)", image_url)
+        if match:
+            original_bytes = base64.b64decode(match.group(1))
+        else:
+            log("[微信] Base64 格式解析失败")
+            return None
+    else:
+        img_resp = requests.get(image_url, timeout=30)
+        if img_resp.status_code != 200:
+            log(f"[微信] 图片下载失败: HTTP {img_resp.status_code}")
+            return None
+        original_bytes = img_resp.content
     log(f"[微信] 原始: {len(original_bytes)/1024:.1f} KB")
     try:
         img = Image.open(io.BytesIO(original_bytes))
@@ -719,6 +778,10 @@ def node5_summary_and_cover():
     cover_prompt = call_deepseek(COVER_PROMPT.format(title=title, article_summary=summary),
                                   "AI绘画工程师", 0.8, 500) or "A healthy lifestyle scene, 16:9, high quality."
     cover_url = generate_cover_image(cover_prompt)
+    if not cover_url:
+        log("[5] 通义万相失败，使用降级封面")
+        weekday, theme_info = get_weekday_theme()
+        cover_url = generate_fallback_cover(theme_info)
     with open(f"{DATA_DIR}/summary.json", "w", encoding="utf-8") as f:
         json.dump({"summary": summary, "cover_prompt": cover_prompt, "cover_url": cover_url}, f, ensure_ascii=False)
     log(f"[5] 摘要({len(summary)}字) + 封面")
