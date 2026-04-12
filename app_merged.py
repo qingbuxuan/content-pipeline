@@ -788,8 +788,109 @@ def node5_summary_and_cover():
     return summary, cover_prompt, cover_url
 
 
+# 飞书多维表格配置
+FEISHU_BITABLE_TOKEN = "THaEbbUfWak0d2sVpCbcXW4Dnfe"
+FEISHU_ARTICLES_TABLE_ID = None  # 运行时自动检测/创建
+
+def get_feishu_token():
+    """获取飞书 access_token"""
+    app_id = os.environ.get("FEISHU_APP_ID", "")
+    app_secret = os.environ.get("FEISHU_APP_SECRET", "")
+    if not app_id or not app_secret:
+        return None
+    url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+    resp = requests.post(url, json={"app_id": app_id, "app_secret": app_secret}, timeout=10)
+    data = resp.json()
+    if data.get("code") != 0:
+        log(f"[飞书] Token获取失败: {data}")
+        return None
+    return data["tenant_access_token"]
+
+def ensure_articles_table(token):
+    """确保文章记录表存在，返回 table_id"""
+    global FEISHU_ARTICLES_TABLE_ID
+    headers = {"Authorization": f"Bearer {token}"}
+    
+    # 1. 列出现有表
+    list_url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables"
+    list_resp = requests.get(list_url, headers=headers, timeout=10)
+    list_data = list_resp.json()
+    
+    if list_data.get("code") != 0:
+        log(f"[飞书] 获取表格列表失败: {list_data}")
+        return None
+    
+    # 2. 查找"文章记录"表
+    for table in list_data.get("data", {}).get("items", []):
+        if table.get("name") == "文章记录":
+            FEISHU_ARTICLES_TABLE_ID = table.get("table_id")
+            log(f"[飞书] 找到文章记录表: {FEISHU_ARTICLES_TABLE_ID}")
+            return FEISHU_ARTICLES_TABLE_ID
+    
+    # 3. 不存在则创建
+    log("[飞书] 创建文章记录表...")
+    create_url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables"
+    create_resp = requests.post(create_url, headers=headers, json={"table": {"name": "文章记录"}}, timeout=10)
+    create_data = create_resp.json()
+    
+    if create_data.get("code") != 0:
+        log(f"[飞书] 创建表失败: {create_data}")
+        return None
+    
+    table_id = create_data["data"]["table_id"]
+    FEISHU_ARTICLES_TABLE_ID = table_id
+    log(f"[飞书] 表创建成功: {table_id}")
+    
+    # 4. 添加字段
+    fields = [
+        {"field_name": "日期", "type": 5},  # DateTime
+        {"field_name": "星期", "type": 3, "property": {"options": [{"name": n} for n in WEEKDAY_NAMES]}},  # SingleSelect
+        {"field_name": "主题", "type": 3},  # SingleSelect
+        {"field_name": "标题", "type": 1},  # Text
+        {"field_name": "摘要", "type": 1},  # Text
+        {"field_name": "飞书文档", "type": 15},  # URL
+        {"field_name": "微信状态", "type": 3, "property": {"options": [{"name": "草稿"}, {"name": "已发布"}, {"name": "未发"}]}},  # SingleSelect
+        {"field_name": "封面图", "type": 15},  # URL
+        {"field_name": "素材来源", "type": 1},  # Text
+    ]
+    for field in fields:
+        field_url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}/fields"
+        requests.post(field_url, headers=headers, json={"field": field}, timeout=10)
+    
+    log("[飞书] 字段创建完成")
+    return table_id
+
+def write_article_record(token, table_id, record_data):
+    """写入文章记录到多维表格"""
+    headers = {"Authorization": f"Bearer {token}"}
+    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}/records"
+    
+    # 构造飞书格式的字段值
+    fields = {
+        "日期": record_data.get("date", 0) * 1000,  # 毫秒时间戳
+        "星期": record_data.get("weekday", "周一"),
+        "主题": record_data.get("theme", ""),
+        "标题": record_data.get("title", ""),
+        "摘要": record_data.get("summary", ""),
+        "飞书文档": {"link": record_data.get("doc_url", ""), "text": "打开文档"},
+        "微信状态": "草稿",
+        "封面图": {"link": record_data.get("cover_url", ""), "text": "封面"},
+        "素材来源": record_data.get("source", "网络"),
+    }
+    
+    resp = requests.post(url, headers=headers, json={"fields": fields}, timeout=10)
+    data = resp.json()
+    
+    if data.get("code") != 0:
+        log(f"[飞书] 写入记录失败: {data}")
+        return None
+    
+    log("[飞书] 记录写入成功")
+    return data.get("data", {}).get("record", {}).get("record_id")
+
+
 def push_to_feishu(title, article, summary, weekday, theme_info):
-    """推送到飞书文档"""
+    """推送到飞书文档 + 多维表格"""
     try:
         # 读取环境变量
         app_id = os.environ.get("FEISHU_APP_ID", "")
@@ -860,6 +961,23 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
         # 5. 生成分享链接
         share_url = f"https://feishu.cn/docx/{doc_token}"
         log(f"[飞书] 文档已创建: {share_url}")
+        
+        # 6. 写入多维表格
+        table_id = ensure_articles_table(access_token)
+        if table_id:
+            import time
+            record_data = {
+                "date": int(time.time()),
+                "weekday": theme_day,
+                "theme": theme_info.get("name", ""),
+                "title": title,
+                "summary": summary,
+                "doc_url": share_url,
+                "cover_url": article.get("cover_url", ""),
+                "source": article.get("source", "网络"),
+            }
+            write_article_record(access_token, table_id, record_data)
+        
         return share_url
         
     except Exception as e:
