@@ -937,6 +937,68 @@ def node5_summary_and_cover():
     log(f"[5] 摘要({len(summary)}字) + 封面")
     return summary, cover_prompt, cover_url
 
+
+def push_to_feishu(title, article, summary, weekday, theme_info):
+    """推送到飞书文档"""
+    try:
+        app_id = os.environ.get("FEISHU_APP_ID", "")
+        app_secret = os.environ.get("FEISHU_APP_SECRET", "")
+        if not app_id or not app_secret:
+            log("[飞书] 缺少 FEISHU_APP_ID 或 FEISHU_APP_SECRET")
+            return None
+        
+        token_url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
+        token_resp = requests.post(token_url, json={"app_id": app_id, "app_secret": app_secret}, timeout=10)
+        token_data = token_resp.json()
+        if token_data.get("code") != 0:
+            log(f"[飞书] Token获取失败: {token_data}")
+            return None
+        access_token = token_data["tenant_access_token"]
+        
+        date_str = beijing_now().strftime("%Y-%m-%d")
+        theme_name = theme_info.get("name", "健康养生")
+        theme_day = WEEKDAY_NAMES[weekday]
+        doc_title = f"{date_str} {theme_day}{theme_name} - {title}"
+        
+        blocks = [
+            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": f"📅 {date_str} {theme_day} · {theme_name}"}], "text_styles": {"bold": True}}},
+            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": f"📌 主题：{theme_info.get('theme', '')}"}]}},
+            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": f"📝 来源：{article.get('source', '网络')}"}]}},
+            {"block_type": 1, "is_collapsible": False, "layout": "paragraph", "elements": []},
+            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": f"🏷️ 标题：{title}"}], "text_styles": {"bold": True}}},
+            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": f"📋 摘要：{summary}"}]}},
+            {"block_type": 1, "is_collapsible": False, "layout": "paragraph", "elements": []},
+            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": "📄 正文："}], "text_styles": {"bold": True}}},
+        ]
+        
+        article_lines = article.get("article", "").split("\n")
+        for line in article_lines[:50]:
+            if line.strip():
+                blocks.append({"block_type": 2, "text": {"elements": [{"type": "text_run", "text": line}]}})
+        
+        create_url = "https://open.feishu.cn/open-apis/docx/v1/documents"
+        headers = {"Authorization": f"Bearer {access_token}"}
+        create_resp = requests.post(create_url, headers=headers, json={"document_id": "", "title": doc_title}, timeout=10)
+        create_data = create_resp.json()
+        
+        if create_data.get("code") != 0:
+            log(f"[飞书] 创建文档失败: {create_data}")
+            return None
+        
+        doc_token = create_data["data"]["document"]["token"]
+        
+        children_url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{doc_token}/blocks"
+        children_resp = requests.post(children_url, headers=headers, json={"children": blocks, "index": -1}, timeout=30)
+        
+        doc_url = f"https://feishu.cn/docx/{doc_token}"
+        log(f"[飞书] 文档已创建: {doc_url}")
+        return doc_url
+        
+    except Exception as e:
+        log(f"[飞书] 推送异常: {e}")
+        return None
+
+
 def node6_send():
     try:
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
@@ -957,14 +1019,17 @@ def node6_send():
         log(f"[6] 读取数据失败: {e}")
         title, article, source, summary, cover_url, cover_prompt, theme_info, weekday = "健康养生文章", "内容", "网络", "", "", "", {}, 0
 
+    # 推送到飞书文档
+    feishu_url = push_to_feishu(title, article_data, summary, weekday, theme_info)
+    
     # Server酱推送（用 Markdown 格式）
+    feishu_line = f"📚 飞书文档：{feishu_url}\n" if feishu_url else ""
     serverchan_content = f"""📝 新文章：
 
 📅 {WEEKDAY_NAMES[weekday]} · {theme_info.get('name', '健康养生')}
 📌 今日主题：{theme_info.get('theme', '')}
 📊 素材来源：{source}
-
-━━━━━━━━━━━━━━━
+{feishu_line}━━━━━━━━━━━━━━━
 
 🏷️ 标题：{title}
 
