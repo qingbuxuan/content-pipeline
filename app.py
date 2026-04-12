@@ -972,7 +972,7 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
         ]
         
         article_lines = article.get("article", "").split("\n")
-        for line in article_lines[:50]:
+        for line in article_lines[:100]:
             if line.strip():
                 blocks.append({"block_type": 2, "text": {"elements": [{"type": "text_run", "text": line}]}})
         

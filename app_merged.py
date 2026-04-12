@@ -829,7 +829,7 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
         
         # 正文分段（飞书每块有限制）
         article_lines = article.get("article", "").split("\n")
-        for line in article_lines[:50]:  # 限制50行
+        for line in article_lines[:100]:  # 限制50行
             if line.strip():
                 blocks.append({"block_type": 2, "text": {"elements": [{"type": "text_run", "text": line}]}})
         
