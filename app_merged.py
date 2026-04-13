@@ -865,14 +865,25 @@ def ensure_articles_table(token):
     return table_id
 
 def write_article_record(token, table_id, record_data):
-    """写入文章记录到多维表格"""
+    """写入文章记录到多维表格（自动适配实际字段名）"""
     headers = {"Authorization": f"Bearer {token}"}
-    url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}/records"
-    
-    # 构造飞书格式的字段值
-    fields = {
-        "日期": record_data.get("date", 0) * 1000,  # 毫秒时间戳
-        "星期": record_data.get("weekday", "周一"),
+
+    # 1. 查询实际字段名
+    fields_url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}/fields"
+    fields_resp = requests.get(fields_url, headers=headers, timeout=10)
+    fields_data = fields_resp.json()
+
+    if fields_data.get("code") != 0:
+        log(f"[飞书] 查询字段失败: {fields_data}")
+        return None
+
+    actual_fields = {f["field_name"]: f for f in fields_data.get("data", {}).get("items", [])}
+    log(f"[飞书] 实际字段: {list(actual_fields.keys())}")
+
+    # 2. 字段名映射（中文名 -> 值）
+    field_mapping = {
+        "日期": record_data.get("date", 0) * 1000,
+        "星期": record_data.get("weekday", ""),
         "主题": record_data.get("theme", ""),
         "标题": record_data.get("title", ""),
         "摘要": record_data.get("summary", ""),
@@ -881,14 +892,33 @@ def write_article_record(token, table_id, record_data):
         "封面图": {"link": record_data.get("cover_url", ""), "text": "封面"},
         "素材来源": record_data.get("source", "网络"),
     }
-    
-    resp = requests.post(url, headers=headers, json={"fields": fields}, timeout=10)
+
+    # 3. 用实际字段名构造写入数据
+    fields_to_write = {}
+    for cn_name, value in field_mapping.items():
+        matched_name = None
+        if cn_name in actual_fields:
+            matched_name = cn_name
+        else:
+            # 模糊匹配
+            for fname in actual_fields:
+                if cn_name in fname or fname in cn_name:
+                    matched_name = fname
+                    break
+        if matched_name:
+            fields_to_write[matched_name] = value
+        else:
+            log(f"[飞书] 跳过字段（未找到）: {cn_name}")
+
+    # 4. 写入记录
+    write_url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}/records"
+    resp = requests.post(write_url, headers=headers, json={"fields": fields_to_write}, timeout=10)
     data = resp.json()
-    
+
     if data.get("code") != 0:
         log(f"[飞书] 写入记录失败: {data}")
         return None
-    
+
     log("[飞书] 记录写入成功")
     return data.get("data", {}).get("record", {}).get("record_id")
 
