@@ -1069,6 +1069,42 @@ def index():
 <br>• GET /test_status → 检查配置
 <br>• GET /test_style → 预览当天样式"""
 
+@app.route("/test_feishu")
+def test_feishu():
+    """快速测试飞书连接和建表"""
+    import traceback
+    try:
+        token = get_feishu_token()
+        if not token:
+            return jsonify({"ok": False, "error": "FEISHU_APP_ID 或 FEISHU_APP_SECRET 未配置"})
+        
+        table_id = ensure_articles_table(token)
+        if not table_id:
+            return jsonify({"ok": False, "error": "建表失败"})
+        
+        # 写一条测试记录
+        import time
+        test_record = {
+            "date": int(time.time()),
+            "weekday": "测试",
+            "theme": "测试主题",
+            "title": "【测试】流水线调试中",
+            "summary": "这是一条测试记录，用于验证飞书多维表格写入功能是否正常。",
+            "doc_url": "https://feishu.cn/docx/test",
+            "cover_url": "",
+            "source": "测试",
+        }
+        record_id = write_article_record(token, table_id, test_record)
+        
+        return jsonify({
+            "ok": True,
+            "table_id": table_id,
+            "record_id": record_id,
+            "message": "飞书连接正常，文章记录表已就绪"
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
 @app.route("/test_status")
 def test_status():
     return jsonify({
