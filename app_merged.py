@@ -811,7 +811,7 @@ def get_feishu_token():
     return data["tenant_access_token"]
 
 def ensure_articles_table(token):
-    """确保文章记录表存在，创建必要的字段，返回 table_id"""
+    """确保公众号文章记录表存在，创建必要的字段，返回 table_id"""
     global FEISHU_ARTICLES_TABLE_ID
     headers = {"Authorization": f"Bearer {token}"}
     
@@ -826,17 +826,17 @@ def ensure_articles_table(token):
     
     table_id = None
     for table in list_data.get("data", {}).get("items", []):
-        if table.get("name") == "文章记录":
+        if table.get("name") == "公众号文章记录":
             table_id = table.get("table_id")
             FEISHU_ARTICLES_TABLE_ID = table_id
-            log(f"[飞书] 找到文章记录表: {table_id}")
+            log(f"[飞书] 找到公众号文章记录表: {table_id}")
             break
     
     # 2. 不存在则创建
     if not table_id:
-        log("[飞书] 创建文章记录表...")
+        log("[飞书] 创建公众号文章记录表...")
         create_url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables"
-        create_resp = requests.post(create_url, headers=headers, json={"table": {"name": "文章记录"}}, timeout=10)
+        create_resp = requests.post(create_url, headers=headers, json={"table": {"name": "公众号文章记录"}}, timeout=10)
         create_data = create_resp.json()
         
         if create_data.get("code") != 0:
@@ -896,7 +896,7 @@ def ensure_articles_table(token):
     return table_id
 
 def write_article_record(token, table_id, record_data):
-    """写入文章记录到多维表格（自动适配实际字段名）"""
+    """写入公众号文章记录到多维表格（自动适配实际字段名）"""
     headers = {"Authorization": f"Bearer {token}"}
 
     # 1. 查询实际字段名
@@ -1168,8 +1168,30 @@ def test_feishu():
             "ok": True,
             "table_id": table_id,
             "record_id": record_id,
-            "message": "飞书连接正常，文章记录表已就绪"
+            "message": "飞书连接正常，公众号文章记录表已就绪"
         })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
+@app.route("/rename_article_table")
+def rename_article_table():
+    """重命名公众号文章记录表为公众号公众号文章记录"""
+    import traceback
+    try:
+        token = get_feishu_token()
+        if not token:
+            return jsonify({"ok": False, "error": "FEISHU_APP_ID 或 FEISHU_APP_SECRET 未配置"})
+        
+        headers = {"Authorization": f"Bearer {token}"}
+        table_id = FEISHU_ARTICLES_TABLE_ID or "tbl3jVfVkQZwlyIv"
+        url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}"
+        resp = requests.patch(url, headers=headers, json={"name": "公众号公众号文章记录"}, timeout=10)
+        data = resp.json()
+        
+        if data.get("code") != 0:
+            return jsonify({"ok": False, "error": data})
+        
+        return jsonify({"ok": True, "message": "表名已改为：公众号公众号文章记录"})
     except Exception as e:
         return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
 
