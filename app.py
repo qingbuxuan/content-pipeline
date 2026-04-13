@@ -947,12 +947,16 @@ def get_feishu_token():
     app_id = os.environ.get("FEISHU_APP_ID", "")
     app_secret = os.environ.get("FEISHU_APP_SECRET", "")
     if not app_id or not app_secret:
+        log(f"[飞书] 环境变量缺失: app_id={'有' if app_id else '无'}, app_secret={'有' if app_secret else '无'}")
         return None
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
     resp = requests.post(url, json={"app_id": app_id, "app_secret": app_secret}, timeout=10)
     data = resp.json()
     if data.get("code") != 0:
-        log(f"[飞书] Token获取失败: {data}")
+        log(f"[飞书] Token获取失败 code={data.get('code')}: {data.get('msg', data)}")
+        return None
+    if "tenant_access_token" not in data:
+        log(f"[飞书] Token响应格式异常: {str(data)[:200]}")
         return None
     return data["tenant_access_token"]
 
@@ -1047,7 +1051,10 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
         token_resp = requests.post(token_url, json={"app_id": app_id, "app_secret": app_secret}, timeout=10)
         token_data = token_resp.json()
         if token_data.get("code") != 0:
-            log(f"[飞书] Token获取失败: {token_data}")
+            log(f"[飞书] Token获取失败 code={token_data.get('code')}: {token_data.get('msg', '')}")
+            return None
+        if "tenant_access_token" not in token_data:
+            log(f"[飞书] Token响应异常: {token_resp.text[:200]}")
             return None
         access_token = token_data["tenant_access_token"]
         
@@ -1203,9 +1210,30 @@ def test_feishu():
     """快速测试飞书连接和建表"""
     import traceback
     try:
-        token = get_feishu_token()
+        # 先直接测试 API 获取 token（不调封装函数）
+        app_id = os.environ.get("FEISHU_APP_ID", "")
+        app_secret = os.environ.get("FEISHU_APP_SECRET", "")
+        if not app_id or not app_secret:
+            return jsonify({"ok": False, "step": "env", "error": "环境变量未配置", "app_id": bool(app_id), "app_secret": bool(app_secret)})
+        
+        resp = requests.post(
+            "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+            json={"app_id": app_id, "app_secret": app_secret},
+            timeout=10
+        )
+        raw = resp.text
+        if resp.status_code != 200:
+            return jsonify({"ok": False, "step": "http", "status": resp.status_code, "raw": raw[:500]})
+        
+        data = resp.json()
+        if data.get("code") != 0:
+            return jsonify({"ok": False, "step": "auth", "code": data.get("code"), "msg": data.get("msg"), "raw": raw[:500]})
+        
+        token = data.get("tenant_access_token", "")
         if not token:
-            return jsonify({"ok": False, "error": "FEISHU_APP_ID 或 FEISHU_APP_SECRET 未配置"})
+            return jsonify({"ok": False, "step": "token", "raw": raw[:500]})
+        
+        # 开始建表
         table_id = ensure_articles_table(token)
         if not table_id:
             return jsonify({"ok": False, "error": "建表失败"})

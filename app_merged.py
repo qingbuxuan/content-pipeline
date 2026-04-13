@@ -797,12 +797,16 @@ def get_feishu_token():
     app_id = os.environ.get("FEISHU_APP_ID", "")
     app_secret = os.environ.get("FEISHU_APP_SECRET", "")
     if not app_id or not app_secret:
+        log(f"[飞书] 环境变量缺失: app_id={'有' if app_id else '无'}, app_secret={'有' if app_secret else '无'}")
         return None
     url = "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal"
     resp = requests.post(url, json={"app_id": app_id, "app_secret": app_secret}, timeout=10)
     data = resp.json()
     if data.get("code") != 0:
-        log(f"[飞书] Token获取失败: {data}")
+        log(f"[飞书] Token获取失败 code={data.get('code')}: {data.get('msg', data)}")
+        return None
+    if "tenant_access_token" not in data:
+        log(f"[飞书] Token响应格式异常: {str(data)[:200]}")
         return None
     return data["tenant_access_token"]
 
@@ -904,7 +908,10 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
         token_resp = requests.post(token_url, json={"app_id": app_id, "app_secret": app_secret}, timeout=10)
         token_data = token_resp.json()
         if token_data.get("code") != 0:
-            log(f"[飞书] Token获取失败: {token_data}")
+            log(f"[飞书] Token获取失败 code={token_data.get('code')}: {token_data.get('msg', '')}")
+            return None
+        if "tenant_access_token" not in token_data:
+            log(f"[飞书] Token响应异常: {token_resp.text[:200]}")
             return None
         access_token = token_data["tenant_access_token"]
         
