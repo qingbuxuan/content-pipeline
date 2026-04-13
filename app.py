@@ -1322,6 +1322,28 @@ def test_feishu():
     except Exception as e:
         return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
 
+@app.route("/rename_article_table")
+def rename_article_table():
+    """重命名表为公众号文章记录"""
+    import traceback
+    try:
+        token = get_feishu_token()
+        if not token:
+            return jsonify({"ok": False, "error": "FEISHU_APP_ID 或 FEISHU_APP_SECRET 未配置"})
+
+        headers = {"Authorization": f"Bearer {token}"}
+        table_id = FEISHU_ARTICLES_TABLE_ID or "tbl3jVfVkQZwlyIv"
+        url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}"
+        resp = requests.patch(url, headers=headers, json={"name": "公众号文章记录"}, timeout=10)
+        data = resp.json()
+
+        if data.get("code") != 0:
+            return jsonify({"ok": False, "error": data})
+
+        return jsonify({"ok": True, "message": "表名已改为：公众号文章记录"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
 @app.route("/test_status")
 def test_status():
     return jsonify({
