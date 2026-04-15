@@ -1196,6 +1196,32 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
         return None
 
 
+@app.route("/test_push_feishu_full")
+def test_push_feishu_full():
+    """模拟完整 push_to_feishu 流程（不费 DeepSeek token）"""
+    import traceback
+    try:
+        fake_article_data = {
+            "article": "# 测试文章\n\n## 第一部分\n\n正文内容。\n\n## 第二部分\n\n更多内容。",
+            "source": "测试",
+            "cover_url": "",
+        }
+        result = push_to_feishu(
+            title="【测试】完整流程验证",
+            article=fake_article_data,
+            summary="测试摘要，验证飞书推送完整流程。",
+            weekday=0,
+            theme_info={"name": "情感心理", "theme": "测试主题"},
+        )
+        return jsonify({
+            "ok": result is not None,
+            "doc_url": result,
+            "message": "成功" if result else "失败"
+        })
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
+
 def node6_send():
     try:
         with open(f"{DATA_DIR}/title.json", encoding="utf-8") as f:
