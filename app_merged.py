@@ -1018,17 +1018,18 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
         
         if children_data.get("code") != 0:
             log(f"[飞书] 写入内容失败: {children_data}")
-            # 文档已创建，返回链接
-            doc_url = f"https://feishu.cn/docx/{doc_token}"
-            log(f"[飞书] 文档链接: {doc_url}")
-            return doc_url
+            # 继续尝试写表
+        else:
+            log(f"[飞书] 文档内容写入成功")
         
         # 5. 生成分享链接
         share_url = f"https://feishu.cn/docx/{doc_token}"
         log(f"[飞书] 文档已创建: {share_url}")
         
         # 6. 写入多维表格
+        log(f"[飞书] 开始写入多维表格...")
         table_id = ensure_articles_table(access_token)
+        log(f"[飞书] 获取到表ID: {table_id}")
         if table_id:
             import time
             record_data = {
@@ -1041,12 +1042,18 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
                 "cover_url": article.get("cover_url", ""),
                 "source": article.get("source", "网络"),
             }
-            write_article_record(access_token, table_id, record_data)
+            log(f"[飞书] 准备写入记录: {record_data}")
+            record_id = write_article_record(access_token, table_id, record_data)
+            log(f"[飞书] 记录写入结果: {record_id}")
+        else:
+            log(f"[飞书] 未获取到表ID，跳过写表")
         
         return share_url
         
     except Exception as e:
+        import traceback
         log(f"[飞书] 推送异常: {e}")
+        log(f"[飞书] 异常详情: {traceback.format_exc()}")
         return None
 
 
