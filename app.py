@@ -1151,6 +1151,34 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
         return None
 
 
+@app.route("/reset_article_table")
+def reset_article_table():
+    """删除旧的公众号文章记录表，让下次运行自动重建"""
+    import traceback
+    try:
+        global FEISHU_ARTICLES_TABLE_ID
+        token = get_feishu_token()
+        if not token:
+            return jsonify({"ok": False, "error": "获取Token失败"})
+        
+        headers = {"Authorization": f"Bearer {token}"}
+        table_id = FEISHU_ARTICLES_TABLE_ID or "tbl3jVfVkQZwlyIv"
+        
+        # 删除表
+        delete_url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}"
+        resp = requests.delete(delete_url, headers=headers, timeout=10)
+        data = resp.json()
+        
+        if data.get("code") != 0:
+            return jsonify({"ok": False, "error": data})
+        
+        # 清除缓存
+        FEISHU_ARTICLES_TABLE_ID = None
+        
+        return jsonify({"ok": True, "message": "旧表已删除，下次运行将自动重建"})
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
+
 @app.route("/test_push_feishu_full")
 def test_push_feishu_full():
     """模拟完整 push_to_feishu 流程（不费 DeepSeek token）"""
