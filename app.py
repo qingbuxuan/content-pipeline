@@ -1012,6 +1012,7 @@ def ensure_articles_table(token):
         ("标题", 1, None),
         ("摘要", 1, None),
         ("正文", 1, None),
+        ("封面提示词", 1, None),
         ("素材来源", 1, None),
     ]
     
@@ -1066,6 +1067,7 @@ def write_article_record(token, table_id, record_data):
         "标题": record_data.get("title", ""),
         "摘要": record_data.get("summary", ""),
         "正文": record_data.get("正文", ""),
+        "封面提示词": record_data.get("封面提示词", ""),
         "素材来源": record_data.get("source", "网络"),
     }
 
@@ -1098,7 +1100,7 @@ def write_article_record(token, table_id, record_data):
     return data.get("data", {}).get("record", {}).get("record_id")
 
 
-def push_to_feishu(title, article, summary, weekday, theme_info):
+def push_to_feishu(title, article, summary, weekday, theme_info, cover_prompt=""):
     """写入飞书多维表格（Bitable），作为核心数据源"""
     try:
         app_id = os.environ.get("FEISHU_APP_ID", "")
@@ -1133,6 +1135,7 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
             "title": title,
             "summary": summary,
             "正文": article_text,
+            "封面提示词": cover_prompt,
             "source": source,
         }
         record_id = write_article_record(token, table_id, record_data)
@@ -1194,6 +1197,7 @@ def test_push_feishu_full():
             summary="测试摘要，验证飞书Bitable写入。",
             weekday=0,
             theme_info={"name": "情感心理", "theme": "测试主题"},
+            cover_prompt="A warm wellness scene with soft lighting, 16:9, high quality.",
         )
         return jsonify({
             "ok": result is not None,
@@ -1225,7 +1229,7 @@ def node6_send():
         title, article, source, summary, cover_url, cover_prompt, theme_info, weekday = "健康养生文章", "内容", "网络", "", "", "", {}, 0
 
     # 写入飞书多维表格（核心数据源）
-    feishu_record_id = push_to_feishu(title, article_data, summary, weekday, theme_info)
+    feishu_record_id = push_to_feishu(title, article_data, summary, weekday, theme_info, cover_prompt)
     if feishu_record_id:
         log(f"[6] 飞书Bitable写入成功: {feishu_record_id}")
     else:
