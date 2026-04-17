@@ -676,7 +676,7 @@ COVER_PROMPT = """## 任务
 - 负面词排除：模糊、噪点、变形
 
 ## 输出格式
-直接输出英文提示词（逗号分隔），200-300字，包含所有视觉要素。
+直接输出中文提示词（逗号分隔），200-300字，包含所有视觉要素。
 禁止输出解释说明。"""
 
 # ========== 流水线节点函数 ==========
@@ -1124,7 +1124,15 @@ def push_to_feishu(title, article, summary, weekday, theme_info, cover_prompt=""
         # 写入记录
         import time as _time
         date_str = beijing_now().strftime("%Y-%m-%d")
-        theme_day = WEEKDAY_NAMES.get(weekday, "周一")
+        # 处理 weekday 类型（可能是 list、string 或 int）
+        if isinstance(weekday, list):
+            weekday_int = weekday[0]
+        elif isinstance(weekday, str):
+            weekday_int = int(weekday) if weekday.isdigit() else 0
+        else:
+            weekday_int = weekday
+        
+        theme_day = WEEKDAY_NAMES[weekday_int] if 0 <= weekday_int < len(WEEKDAY_NAMES) else "周一"
         article_text = article.get("article", "") if isinstance(article, dict) else str(article)
         source = article.get("source", "网络") if isinstance(article, dict) else "网络"
         
@@ -1236,7 +1244,7 @@ def node6_send():
         log(f"[6] 飞书Bitable写入失败")
     
     # Server酱推送（独立，与飞书无关）
-    serverchan_content = f"""📝 新文章：
+    serverchan_content = f"""📝 新文章
 
 📅 {WEEKDAY_NAMES[weekday]} · {theme_info.get('name', '健康养生')}
 📌 今日主题：{theme_info.get('theme', '')}
