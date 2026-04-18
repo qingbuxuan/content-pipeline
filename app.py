@@ -1013,6 +1013,7 @@ def ensure_articles_table(token):
         ("摘要", 1, None),
         ("正文", 1, None),
         ("封面提示词", 1, None),
+        ("视频路径", 1, None),
         ("素材来源", 1, None),
     ]
     
@@ -1068,6 +1069,7 @@ def write_article_record(token, table_id, record_data):
         "摘要": record_data.get("summary", ""),
         "正文": record_data.get("正文", ""),
         "封面提示词": record_data.get("封面提示词", ""),
+        "视频路径": "",
         "素材来源": record_data.get("source", "网络"),
     }
 
