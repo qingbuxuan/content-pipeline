@@ -270,8 +270,14 @@ def markdown_to_html(md_text, weekday):
     """Markdown 转 HTML，应用当天主题样式"""
     colors = get_style_for_weekday(weekday)
     
+    # 0. 保护话题标签：#话题（#后紧跟非空格字符）→ 占位符，避免被 Markdown 解析成标题
+    md_text = re.sub(r'#(\S)', r'HASHTAG_PLACEHOLDER\1', md_text)
+    
     # 1. Markdown 转 HTML
     html = markdown.markdown(md_text, extensions=['nl2br', 'sane_lists', 'fenced_code'])
+    
+    # 2. 还原话题标签
+    html = html.replace('HASHTAG_PLACEHOLDER', '#')
     
     # 2. 应用样式
     # H2 大章节标题
