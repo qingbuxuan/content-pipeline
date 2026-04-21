@@ -36,18 +36,12 @@ WEEKLY_BANNERS = {
 }
 
 ABOUT_TEXT = (
-    "每天7点，7个方向，陪你慢慢变好。\n\n"
-    "情感、养生、慢病、情绪、品质、科技、急救——一周七天，天天有干货。\n\n"
-    "不讲大道理，只聊咱老百姓用得上的。\n"
-    "关注我，从今天起，有人陪你健康到老。"
+    "> 每天7点，7个方向，陪你慢慢变好。\n"
+    "> 情感、养生、慢病、情绪、品质，科技，急救——一周七天，天天有干货。\n"
+    "> 不讲大道理，只聊咱老百姓用得上的。\n"
+    "> 关注我，从今天起，有人陪你健康到老。\n"
 )
 
-ABOUT_TEXT = (
-    "每天7点，7个方向，陪你慢慢变好。\n\n"
-    "情感、养生、慢病、情绪、品质、科技、急救——一周七天，天天有干货。\n\n"
-    "不讲大道理，只聊咱老百姓用得上的。\n\n"
-    "关注我，从今天起，有人陪你健康到老。"
-)
 
 # ========== 七天主题样式系统 ==========
 # 每天一个主题，每个主题一套配色方案
@@ -1339,9 +1333,9 @@ def node6_send():
             + article
             + f"\n\n---\n\n"
             + f"📅 明天 **「{next_banner.get('column', '')}」**："
-            + f"{next_banner.get('icon', '')} {WEEKDAY_NAMES[next_wk]} · {WEEKDAY_NAMES[next_wk]} "
+            + f"{next_banner.get('icon', '')} {WEEKDAY_NAMES[next_wk]} · {next_banner.get('column', '')} "
             + f"{next_banner.get('slogan', '')}\n\n"
-            + f"> {ABOUT_TEXT}"
+            + ABOUT_TEXT
         )
 
         # Markdown → HTML（应用当天主题样式）
