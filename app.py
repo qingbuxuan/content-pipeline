@@ -888,7 +888,7 @@ def node2_title():
         for line in result.split("\n"):
             if "最终标题" in line:
                 # 提取标题
-                t = line.split("】")[-1].strip() or line.split("：")[-1].strip()
+                t = line.split("】")[-1].strip().lstrip("：:").strip() or line.split("：")[-1].strip()
                 if t:
                     # 检查字节数
                     byte_len = len(t.encode("utf-8"))
