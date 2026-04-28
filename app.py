@@ -309,7 +309,7 @@ def markdown_to_html(md_text, weekday):
     colors = get_style_for_weekday(weekday)
     
     # 0. 保护话题标签：#话题（#后紧跟非空格字符）→ 占位符，避免被 Markdown 解析成标题
-    md_text = re.sub(r'#(\S)', r'HASHTAG_PLACEHOLDER\1', md_text)
+    md_text = re.sub(r"#([^#\s]\S*)", r"HASHTAG_PLACEHOLDER\1", md_text)  # #后非空格非#=话题标签
     
     # 1. Markdown 转 HTML
     html = markdown.markdown(md_text, extensions=['nl2br', 'sane_lists', 'fenced_code'])
