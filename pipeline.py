@@ -9,6 +9,8 @@ from prompts import *
 def get_weekday_theme():
     weekday = beijing_now().weekday()
     theme_info = WEEKLY_THEMES.get(weekday, WEEKLY_THEMES[0])
+    log(f"[主题] 今天{WEEKDAY_NAMES[weekday]} · {theme_info['name']} · {theme_info['theme']}")
+    return weekday, theme_info
 
 def read_articles(weekday, limit=4):
     """从飞书读取最近几周同主题文章"""
