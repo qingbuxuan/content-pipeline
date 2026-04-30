@@ -1,0 +1,8 @@
+# -*- coding: utf-8 -*-
+with open(r'C:\content-pipeline\app_merged.py', 'r', encoding='utf-8') as f:
+    lines = f.readlines()
+
+# 读title.json和candidates.json加载行
+print("=== node4_article 完整函数 (L742-762) ===")
+for i in range(741, min(741+20, len(lines))):
+    print(f"  L{i+1}: {lines[i].rstrip()[:130]}")

@@ -1,0 +1,20 @@
+# -*- coding: utf-8 -*-
+with open(r'C:\content-pipeline\app_merged.py', 'r', encoding='utf-8') as f:
+    lines = f.readlines()
+
+# 读行456-480 (THREE_HOOKS_ARTICLE_的完整模板)
+print("=== THREE_HOOKS_ARTICLE_PROMPT (L456) ===")
+for i in range(455, min(455+25, len(lines))):
+    print(f"  L{i+1}: {lines[i].rstrip()[:120]}")
+
+# 读行742-770 (node4_article完整函数)
+print("\n=== node4_article (L742) ===")
+for i in range(741, min(741+18, len(lines))):
+    print(f"  L{i+1}: {lines[i].rstrip()[:120]}")
+
+# 读app.py的行6-55 (read_articles函数)
+print("\n=== read_articles in app.py ===")
+with open(r'C:\content-pipeline\app.py', 'r', encoding='utf-8') as f:
+    app_lines = f.readlines()
+for i in range(5, min(5+50, len(app_lines))):
+    print(f"  L{i+1}: {app_lines[i].rstrip()[:120]}")

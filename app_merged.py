@@ -561,6 +561,39 @@ COVER_PROMPT = """## 任务
 def get_weekday_theme():
     weekday = beijing_now().weekday()
     theme_info = WEEKLY_THEMES.get(weekday, WEEKLY_THEMES[0])
+
+def read_articles(weekday, limit=4):
+    """从飞书读取最近几周同主题文章"""
+    from datetime import timedelta
+    try:
+        token = get_feishu_token()
+        if not token:
+            return ""
+        table_id = FEISHU_BITABLE_TABLE_ID
+        weekday_name = WEEKDAY_NAMES[weekday]
+        # Get records (filter in Python to avoid encoding issues)
+        url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}/records"
+        resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=15)
+        data = resp.json()
+        if data.get("code") != 0:
+            return ""
+        items = data.get("data", {}).get("items", [])
+        if not items:
+            return ""
+        # Filter by weekday in Python
+        articles = []
+        for item in items:
+            fields = item.get("fields", {})
+            wk = fields.get("星期", "")
+            if wk == weekday_name:
+                body = fields.get("正文", "") or ""
+                if body and len(body) > 50:
+                    articles.append(body[:500])
+        return "\n\n".join(articles[:limit])
+    except Exception as e:
+        log(f"[防重复] 读取失败: {e}")
+        return ""
+
     log(f"[主题] 今天{WEEKDAY_NAMES[weekday]} · {theme_info['name']} · {theme_info['theme']}")
     return weekday, theme_info
 
@@ -750,10 +783,14 @@ def node4_article():
         title = title_data["title"]
         outline = outline_data.get("outline", "")
         source = cand_data.get("items", [{}])[0].get("source", "网络")
+        weekday = title_data.get("weekday", beijing_now().weekday())
+        hist = read_articles(weekday, limit=4)
+        hist_prompt = f"\n\n参考：\n{hist}\n" if hist else ""
     except:
         title, outline, source = "健康养生", "", "网络"
+        hist_prompt = ""
     log("[4] 生成正文(Markdown格式)...")
-    result = call_deepseek(THREE_HOOKS_ARTICLE_PROMPT.format(title=title, outline=outline[:2000] or "基础大纲"),
+    result = call_deepseek(THREE_HOOKS_ARTICLE_PROMPT.format(title=title, outline=outline[:2000] or "基础大纲") + hist_prompt,
                            THREE_HOOKS_SYSTEM, 0.8, 3000)
     article = result or f"【{title}】这是一篇健康养生文章。\n\n#健康 #养生"
     with open(f"{DATA_DIR}/article.json", "w", encoding="utf-8") as f:

@@ -1,0 +1,93 @@
+# -*- coding: utf-8 -*-
+"""防重复方案：在app_merged.psy里注入read_last_articles历史上下文到node4"""
+import re
+
+with open(r'C:\content-pipeline\app_merged.psy', 'r', encoding='utf-8') as f:
+    content = f.read()
+
+# 1. 在 get_feishu_token 前插入 read_last_articles 函数
+read_articles_code = '''
+def read_last_articles(weekday, limit=4):
+    """读取最近N篇同主题文章的摘要，避免重复角度"""
+    try:
+        app_id = os.environ.get("FEISHU_APP_ID", "")
+        app_secret = os.environ.get("FEISHU_APP_SECRET", "")
+        if not app_id or not app_secret:
+            return ""
+        resp = requests.post(
+            "https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal",
+            json={"app_id": app_id, "app_secret": app_secret}, timeout=10
+        )
+        token = resp.json().get("tenant_access_token", "")
+        if not token:
+            return ""
+        headers = {"Authorization": f"Bearer {token}"}
+        table_id = os.environ.get("FEISHU_ARTICLES_TABLE_ID", "tbl3jVfVkQZwlyIv")
+        bitable_ = os.environ.get("FEISHU_BITABLE_TOKEN", "THaEbbUfWak0d2sVpCbcXW4Dnfe")
+        wk_names = ["周一","周二","周三","周四","周五","周六","周日"]
+        wk_name = wk_names[weekday] if 0 <= weekday <= 6 else "周一"
+        params = {
+            "page_size": 500,
+            "filter": f'AND(Filter("星期", "=", "{wk_name}"), NOT(Filter("正文", "is_empty")))',
+            "sort_by": "ctime",
+            "order_by": "Desc",
+            "field_names": "星期,标题,正文"
+        }
+        r = requests.get(
+            f"https://open.feishu.cn/open-apis/bitable/v1/apps/{bitable_}/tables/{table_id}/records",
+            headers=headers, params=params, timeout=15
+        )
+        items = r.json().get("data", {}).get("items", [])
+        ctx_list = []
+        for item in items[:limit]:
+            fields = item.get("fields", {})
+            title = fields.get("标题", "未知")
+            body = fields.get("正文", "")
+            snippet = body[:300] if body else ""
+            ctx_list.append(f"- 标题：{title}\\n{snippet}")
+        if not ctx_list:
+            return ""
+        return "\\n\\n---\\n【最近同主题文章参考】\\n" + "\\n---\\n".join(ctx_list)
+    except:
+        return ""
+
+'''
+
+# 找 get_feishu_token 位置并插入
+target = '\ndef get_feishu_token():'
+if target in content:
+    content = content.replace(target, read_articles_code + target, 1)
+    print("✅ read_last_articles 插入成功")
+else:
+    print("❌ 找不到 get_feishu_token")
+    exit(1)
+
+# 2. 在 node4_article() 的 call_deepseek 前注入上下文
+# 原始: log("[4] 正文生成...  result = call_deepseek(
+# 改后: 读取历史上下文，注入到 prompt
+
+old_call = '    result = call_deepseek(THREE_HOOKS_ARTICLE_'
+new_call = '''    # 注入历史文章上下文（防重复）
+    wk = weekday if "weekday" in dir() else 0
+    history_ctx = read_last_articles(wk, limit=4)
+    prompt_base = THREE_HOOKS_ARTICLE_PROMPT
+    if history_ctx:
+        prompt_base = prompt_base.replace(
+            "## 标题\\n{title}",
+            f"## 标题\\n{{title}}\\n{history_ctx}"
+        )
+    result = call_deepseek(prompt_base.'''
+
+if old_call in content:
+    content = content.replace(old_call, new_call, 1)
+    print("✅ 上下文注入成功")
+else:
+    print("❌ 找不到 call_deepseek 注入点，当前call_deepseek位置:")
+    for i, line in enumerate(content.split('\n')):
+        if 'call_deepseek(THREE_HOOKS' in line:
+            print(f"  行{i+1}: {line[:120]}")
+    exit(1)
+
+with open(r'C:\content-pipeline\app_merged.psy', 'w', encoding='utf-8') as f:
+    f.write(content)
+print("✅ 保存完成！")
