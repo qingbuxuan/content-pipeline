@@ -1169,166 +1169,17 @@ def node6_send():
         return {"status": "success", "cover_url": cover_url, "draft": draft_ok}
     return {"status": "failed", "error": result}
 
-# ========== Flask 路由 ==========
 @app.route("/")
 def index():
-    return """✅ 内容流水线 v3.0（七天主题样式系统）
-<br>• GET /trigger?force=1 → 强制触发完整流程
-<br>• GET /test_draft → 测试草稿箱
-<br>• GET /test_status → 检查配置
-<br>• GET /test_style → 预览当天样式"""
-
-@app.route("/test_feishu")
-def test_feishu():
-    """快速测试飞书连接和建表"""
-    import traceback
-    try:
-        token = get_feishu_token()
-        if not token:
-            return jsonify({"ok": False, "error": "FEISHU_APP_ID 或 FEISHU_APP_SECRET 未配置"})
-        
-        table_id = ensure_articles_table(token)
-        if not table_id:
-            return jsonify({"ok": False, "error": "建表失败"})
-        
-        # 写一条测试记录
-        import time
-        test_record = {
-            "date": int(time.time()),
-            "weekday": "测试",
-            "theme": "测试主题",
-            "title": "【测试】流水线调试中",
-            "summary": "这是一条测试记录，用于验证飞书多维表格写入功能是否正常。",
-            "doc_url": "https://feishu.cn/docx/test",
-            "cover_url": "",
-            "source": "测试",
-        }
-        record_id = write_article_record(token, table_id, test_record)
-        
-        return jsonify({
-            "ok": True,
-            "table_id": table_id,
-            "record_id": record_id,
-            "message": "飞书连接正常，公众号文章记录表已就绪"
-        })
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
-
-@app.route("/rename_article_table")
-def rename_article_table():
-    """重命名公众号文章记录表为公众号公众号文章记录"""
-    import traceback
-    try:
-        token = get_feishu_token()
-        if not token:
-            return jsonify({"ok": False, "error": "FEISHU_APP_ID 或 FEISHU_APP_SECRET 未配置"})
-        
-        headers = {"Authorization": f"Bearer {token}"}
-        table_id = FEISHU_ARTICLES_TABLE_ID or "tbl3jVfVkQZwlyIv"
-        url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}"
-        resp = requests.patch(url, headers=headers, json={"name": "公众号公众号文章记录"}, timeout=10)
-        data = resp.json()
-        
-        if data.get("code") != 0:
-            return jsonify({"ok": False, "error": data})
-        
-        return jsonify({"ok": True, "message": "表名已改为：公众号公众号文章记录"})
-    except Exception as e:
-        return jsonify({"ok": False, "error": str(e), "trace": traceback.format_exc()}), 500
-
-@app.route("/test_status")
-def test_status():
     return jsonify({
-        "WX_APPID": "✅" if WX_APPID else "❌ 未配置",
-        "WX_APPSECRET": "✅" if WX_APPSECRET else "❌ 未配置",
-        "SERVERCHAN_KEY": "✅" if SERVERCHAN_KEY else "❌",
-        "WANXIANG_API_KEY": "✅" if WANXIANG_API_KEY else "❌",
-        "DEEPSEEK_API_KEY": "✅" if DEEPSEEK_API_KEY else "❌",
+        "status": "ok",
+        "version": "v3.0",
+        "message": "内容流水线（七天主题样式系统）",
+        "endpoints": {
+            "GET /": "健康检查",
+            "GET /trigger?force=1": "手动触发完整流程"
+        }
     })
-
-@app.route("/test_style")
-def test_style():
-    """预览当天主题样式"""
-    weekday = beijing_now().weekday()
-    colors = get_style_for_weekday(weekday)
-    theme = STYLE_THEMES[weekday]
-    
-    sample_md = """## 这是一个大章节标题
-
-这是一段正文内容。**这是重点加粗的文字**，需要突出显示。
-
-### 这是一个子小节
-
-> 这是一句金句引用，需要特别突出。
-
-正文继续，列表如下：
-
-- 列表项一
-- 列表项二
-- 列表项三
-
-#话题标签一 #话题标签二"""
-    
-    html = markdown_to_html(sample_md, weekday)
-    
-    return f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><title>今日样式预览</title></head>
-<body style="background: #f9f9f9; padding: 20px; font-family: sans-serif;">
-<h2>📅 {WEEKDAY_NAMES[weekday]} · {theme['name']}</h2>
-<p>主色调: <span style="color: {colors['primary']};">■</span> {colors['primary']}</p>
-<p>标题色: <span style="color: {colors['heading']};">■</span> {colors['heading']}</p>
-<p>正文色: <span style="color: {colors['text']};">■</span> {colors['text']}</p>
-<hr>
-{html}
-</body></html>"""
-
-@app.route("/test_draft")
-def test_draft():
-    log("=" * 50)
-    log("🧪 草稿箱测试")
-    log("=" * 50)
-    weekday = beijing_now().weekday()
-    
-    cover_url = generate_cover_image(
-        "An elderly Chinese woman sitting by the window, looking out at a quiet neighborhood, warm afternoon sunlight, gentle and peaceful atmosphere, realistic photography style, 16:9"
-    )
-    if not cover_url:
-        return jsonify({"success": False, "error": "封面图生成失败"}), 500
-    
-    sample_md = """## 子女不在身边，老人如何告别孤独感？
-
-李阿姨今年68岁，退休前是小学老师。老伴三年前走了，儿子在上海工作，一年回来两三次。
-
-她说，**最难熬的不是夜里醒来的那两个小时，而是白天**。手机里儿子的照片看了又看，想打电话又怕打扰他工作。
-
-### 空巢老人的三个解法
-
-> 老有所依，不是物质上的依靠，是心里的那份牵挂。
-
-那怎么办？
-
-- 给自己找个"寄托"，养花养鸟养猫狗都行
-- 主动走出去，小区广场舞队、棋牌室都是好去处
-- 学会用微信视频，能看见脸的距离感小很多
-
-这是很多空巢老人的真实写照。**孤独感对老年人的伤害，比我们想象的大得多**。
-
-#空巢老人 #孤独感 #心理健康 #家庭关系 #养老"""
-    
-    article_html = markdown_to_html(sample_md, weekday)
-    
-    success = push_article_to_draft(
-        "子女不在身边，老人如何告别孤独感？",
-        STYLE_THEMES[weekday]["name"],
-        "子女不在身边，空巢老人的孤独感如何化解？这三个方法值得尝试。",
-        article_html,
-        cover_url,
-        weekday
-    )
-    if success:
-        send_to_wechat("✅ 草稿箱推送成功", f"📝 《子女不在身边，老人如何告别孤独感？》已推送\n🎨 封面：{cover_url}")
-        return jsonify({"success": True, "cover_url": cover_url, "weekday": WEEKDAY_NAMES[weekday], "theme": STYLE_THEMES[weekday]["name"]})
-    return jsonify({"success": False, "error": "草稿箱推送失败"}), 500
 
 @app.route("/trigger")
 def trigger():
