@@ -290,7 +290,7 @@ FEISHU_ARTICLES_TABLE_ID = None  # 运行时自动检测/创建
 def get_feishu_token():
     """获取飞书 access_token"""
     app_id = os.environ.get("FEISHU_APP_ID", "")
-    app_secret = os.environ.get("FEISHU_APP_SECRET", "")
+    app_secret = os.environ.get("FEISHU_APP_SECRET", "") or os.environ.get("QCLAW_FEISHU_APP_SECRET", "")
     if not app_id or not app_secret:
         log(f"[飞书] 环境变量缺失: app_id={'有' if app_id else '无'}, app_secret={'有' if app_secret else '无'}")
         return None
@@ -454,7 +454,7 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
     try:
         # 读取环境变量
         app_id = os.environ.get("FEISHU_APP_ID", "")
-        app_secret = os.environ.get("FEISHU_APP_SECRET", "")
+        app_secret = os.environ.get("FEISHU_APP_SECRET", "") or os.environ.get("QCLAW_FEISHU_APP_SECRET", "")
         if not app_id or not app_secret:
             log("[飞书] 缺少 FEISHU_APP_ID 或 FEISHU_APP_SECRET")
             return None
