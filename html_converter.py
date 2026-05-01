@@ -63,12 +63,27 @@ def markdown_to_html(md_text, weekday):
         html
     )
     
-    # 处理话题标签（#开头的内容）
-    # 找到文末的话题标签行
-    tag_pattern = r'<p style="[^"]*">#([^<]+)</p>'
+    # 处理话题标签（#话题标签），匹配各种可能性：
+    # - 行首标签: <p>#健康 #养生</p>
+    # - 行中标签: <p>aaa #健康 #养生</p>
+    # - 分割线后标签块: ### ###标签块
+    # 统一加样式，原始 # 保留（前端显示）
+    for ptn, tag in [
+        (r'(<p([^>]*)>)(#[^<]+)(</p>)', r'\1<span style="color: ' + colors['tag'] + r'; font-size: 14px;"' + r'>\3</span>\4'),
+        (r'(<p([^>]*)>[^<]*)(#[\u4e00-\u9fa5\w]+)(</p>)', r'\1<span style="color: ' + colors['tag'] + r'; font-size: 14px;">' + r'\3</span>\4'),
+    ]:
+        html = re.sub(ptn, tag, html)
+    # 文末纯标签行：<p>#健康 #养生</p> 这种整行都是标签的，做大字体处理
+    # 匹配整个p内容都是#开头的标签的情况
+    tag_only = r'(<p([^>]*)>\s*)(#[^<#]+(?:\s+#[^<#]+)*)(\s*</p>)'
     html = re.sub(
-        tag_pattern,
-        f'<p style="color: {colors["tag"]}; font-size: 14px; margin-top: 2em;">#\\1</p>',
+        tag_only,
+        lambda m: m.group(1) + '<span style="color: ' + colors['tag'] + r'; font-size: 14px; line-height: 2;">' + m.group(3).strip() + '</span>' + m.group(4),
+        html
+    )
+    html = re.sub(
+        r'<p style="[^"]*">((?:\s*#(?:[\u4e00-\u9fa5\w])+)+)(?:\s*</p>)',
+        lambda m: '<p style="color: ' + colors['tag'] + r'; font-size: 14px; margin-top: 2em; line-height: 2;">' + m.group(1).strip() + '</p>',
         html
     )
     

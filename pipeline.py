@@ -176,8 +176,16 @@ def node2_title():
     if result:
         for line in result.split("\n"):
             if "最终标题" in line:
-                # 提取标题
-                t = line.split("】")[-1].strip() or line.split("：")[-1].strip()
+                # 提取标题：找冒号或【】分隔
+                raw = line.split("】")[-1].strip()  # 去掉【最终标题】前缀
+                # 处理 "【最终标题】:xxx" 或 "【最终标题】：xxx" 或 "【最终标题】 xxx" 三种情况
+                if "：" in raw:
+                    t = raw.split("：", 1)[-1].strip()
+                elif ":" in raw:
+                    t = raw.split(":", 1)[-1].strip()
+                else:
+                    t = raw.strip()
+                t = t.lstrip("：").lstrip(":").strip()  # 兜底：去掉可能残留的冒号和空格
                 if t:
                     # 检查字节数
                     byte_len = len(t.encode("utf-8"))
