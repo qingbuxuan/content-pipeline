@@ -15,10 +15,10 @@ def markdown_to_html(md_text, weekday):
     html = markdown.markdown(md_text, extensions=['nl2br', 'sane_lists', 'fenced_code'])
     
     # 2. 应用样式
-    # H2 大章节标题
+    # H2 大章节标题（纯文本样式，无边框）
     html = re.sub(
         r'<h2>(.*?)</h2>',
-        f'<h2 style="margin: 1.5em 0 1em; padding-left: 15px; border-left: 4px solid {colors["primary"]}; font-size: 20px; font-weight: 600; color: {colors["heading"]};">\\1</h2>',
+        f'<h2 style="margin: 1.5em 0 1em; font-size: 20px; font-weight: 600; color: {colors["heading"]};">\\1</h2>',
         html
     )
     
