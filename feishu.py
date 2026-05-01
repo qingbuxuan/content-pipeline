@@ -14,9 +14,8 @@ import time
 from config import (
     FEISHU_BITABLE_TOKEN,
     WEEKDAY_NAMES,
-    log,
-    beijing_now,
 )
+from utils import log, beijing_now
 
 # 模块级缓存
 FEISHU_ARTICLES_TABLE_ID = None
