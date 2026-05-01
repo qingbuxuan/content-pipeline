@@ -23,6 +23,26 @@ WANXIANG_API_KEY = os.environ.get("WANXIANG_API_KEY", "")
 WX_APPID = os.environ.get("WX_APPID", "")
 WX_APPSECRET = os.environ.get("WX_APPSECRET", "")
 
+# ========== 七天主题固定视觉标识系统 ==========
+# 文首固定视觉标识 + 文末预告 + 引导关注
+WEEKLY_BANNERS = {
+    0: {"icon": "💬", "column": "咱心里话",   "slogan": "聊聊心事，日子就不苦了"},
+    1: {"icon": "🍲", "column": "过日子",       "slogan": "吃对睡好，比啥都强"},
+    2: {"icon": "📊", "column": "稳住慢慢来",   "slogan": "慢性病不可怕，怕的是不管它"},
+    3: {"icon": "🌿", "column": "心要宽",       "slogan": "心情顺了，身体就顺了"},
+    4: {"icon": "🏠", "column": "会过日子",     "slogan": "把钱花在刀刃上，把日子过出滋味"},
+    5: {"icon": "📱", "column": "跟上时代",     "slogan": "新东西不难学，学了就方便"},
+    6: {"icon": "🚑", "column": "关键时刻",     "slogan": "平时看一眼，急时不抓瞎"},
+}
+
+ABOUT_TEXT = (
+    "每天7点，7个方向，陪你慢慢变好。\n\n"
+    "情感、养生、慢病、情绪、品质、科技、急救——一周七天，天天有干货。\n\n"
+    "不讲大道理，只聊咱老百姓用得上的。\n\n"
+    "关注我，从今天起，有人陪你健康到老。"
+)
+
+
 # ========== 七天主题样式系统 ==========
 # 每天一个主题，每个主题一套配色方案
 STYLE_THEMES = {

@@ -609,8 +609,25 @@ def node6_send():
         log("[6] 推送至微信草稿箱...")
         log(f"[6] 使用主题样式: {WEEKDAY_NAMES[weekday]} · {theme_info.get('name', '')}")
         
+        # === 拼装完整文章（文首固定标识 + 正文 + 文末预告 + 引导关注） ===
+        banner = WEEKLY_BANNERS.get(weekday, {})
+        next_wk = (weekday + 1) % 7
+        next_banner = WEEKLY_BANNERS.get(next_wk, {})
+        
+        # 文首固定标识（Markdown格式，转为HTML后样式由markdown_to_html处理）
+        banner_md = f"{banner.get('icon', '')} **{WEEKDAY_NAMES[weekday]} · {theme_info.get('name', '')}**「{banner.get('column', '')}」{banner.get('slogan', '')}"
+        
+        # 文末预告（Markdown格式）
+        preview_md = f"📅 明天 **「{next_banner.get('column', '')}」**：{next_banner.get('icon', '')} {WEEKDAY_NAMES[next_wk]} · {next_banner.get('slogan', '')}"
+        
+        # 引导关注（Markdown引用格式）
+        about_md = "> " + ABOUT_TEXT.replace("\n\n", "\n> \n> ")
+        
+        # 完整Markdown文章
+        article_full_md = f"{banner_md}\n\n{article}\n\n---\n\n{preview_md}\n\n{about_md}"
+        
         # Markdown → HTML（应用当天主题样式）
-        article_html = markdown_to_html(article, weekday)
+        article_html = markdown_to_html(article_full_md, weekday)
         
         digest = (summary[:54] + "…") if len(summary) > 54 else summary
         author = theme_info.get("name", "健康养生")
