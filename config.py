@@ -176,3 +176,6 @@ WEEKLY_THEMES = {k: {
 } for k, v in STYLE_THEMES.items()}
 
 KEYWORDS = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感", "饮食", "减肥", "健身", "血压", "血糖", "心脏", "癌症", "疫苗", "医院", "医生", "药品", "保健", "体检", "养老", "老年", "中年", "退休", "家庭", "婚姻", "孩子"]
+
+FEISHU_BITABLE_TOKEN = "THaEbbUfWak0d2sVpCbcXW4Dnfe"
+FEISHU_ARTICLES_TABLE_ID = None
