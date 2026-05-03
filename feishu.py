@@ -23,7 +23,7 @@ FEISHU_ARTICLES_TABLE_ID = None
 
 def get_feishu_token():
     """获取飞书 access_token"""
-    app_id = os.environ.get("FEISHU_APP_ID", "")
+    app_id = os.environ.get("FEISHU_APP_ID", "") or os.environ.get("QCLAW_FEISHU_APP_ID", "")
     app_secret = os.environ.get("FEISHU_APP_SECRET", "") or os.environ.get("QCLAW_FEISHU_APP_SECRET", "")
     if not app_id or not app_secret:
         log(f"[飞书] 环境变量缺失: app_id={'有' if app_id else '无'}, app_secret={'有' if app_secret else '无'}")
