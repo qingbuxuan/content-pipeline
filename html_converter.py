@@ -67,7 +67,14 @@ def markdown_to_html(md_text, weekday):
     # - 行首标签: <p>#健康 #养生</p>
     # - 行中标签: <p>aaa #健康 #养生</p>
     # - 分割线后标签块: ### ###标签块
+    # - 行首标签被 markdown 误解析为 h1: <h1>#健康 #养生</h1> → 转回 p
     # 统一加样式，原始 # 保留（前端显示）
+    # 先处理 h1 误判
+    html = re.sub(
+        r'<h1>\s*(#[^<]+)\s*</h1>',
+        lambda m: f'<p style="color: {colors["tag"]}; font-size: 14px; margin-top: 2em; line-height: 2;">' + m.group(1).strip() + '</p>',
+        html
+    )
     for ptn, tag in [
         (r'(<p([^>]*)>)(#[^<]+)(</p>)', r'\1<span style="color: ' + colors['tag'] + r'; font-size: 14px;"' + r'>\3</span>\4'),
         (r'(<p([^>]*)>[^<]*)(#[\u4e00-\u9fa5\w]+)(</p>)', r'\1<span style="color: ' + colors['tag'] + r'; font-size: 14px;">' + r'\3</span>\4'),
