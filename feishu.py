@@ -228,7 +228,12 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
             log(f"[飞书] 创建文档失败: {create_data}")
             return None
         
-        doc_token = create_data["data"]["document"]["token"]
+        # 安全提取 doc_token（防御：检查键是否存在）
+        try:
+            doc_token = create_data["data"]["document"]["token"]
+        except (KeyError, TypeError) as e:
+            log(f"[飞书] 解析 doc_token 失败: {e}，响应内容: {str(create_data)[:300]}")
+            return None
         
         # 写入内容块
         children_url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{doc_token}/blocks"

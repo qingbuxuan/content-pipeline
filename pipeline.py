@@ -121,7 +121,7 @@ def truncate_title_smart(title, max_bytes=60):
         found_break = False
         for i in range(len(result) - 1, 0, -1):
             if result[i] in break_chars:
-                result = result[:i]
+                result = result[:i]  # 截断点在break_char处（含break_char），去掉break_char本身
                 found_break = True
                 break
         

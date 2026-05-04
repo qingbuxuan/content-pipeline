@@ -63,31 +63,33 @@ def markdown_to_html(md_text, weekday):
         html
     )
     
-    # 处理话题标签（#话题标签），匹配各种可能性：
-    # - 行首标签: <p>#健康 #养生</p>
-    # - 行中标签: <p>aaa #健康 #养生</p>
-    # - 分割线后标签块: ### ###标签块
-    # - 行首标签被 markdown 误解析为 h1: <h1>#健康 #养生</h1> → 转回 p
-    # 统一加样式，原始 # 保留（前端显示）
-    # 先处理 h1 误判
-    html = re.sub(
-        r'<h1>\s*(#[^<]+)\s*</h1>',
-        lambda m: f'<p style="color: {colors["tag"]}; font-size: 14px; margin-top: 2em; line-height: 2;">' + m.group(1).strip() + '</p>',
-        html
-    )
+    # 处理话题标签（#话题标签），Markdown会把单独一行的 `#标签` 解析成 h1，此时第一个 # 被标题语法消耗掉
+    # 1. 处理 h1 误判：被误判为标题的标签行，h1内容是 `健康 #养生`（没有开头的#），需补上#
+    def fix_h1_tag(m):
+        content = m.group(1).strip()
+        # 如果内容以标签字符（中文/英文）开头但没有 #，说明#被标题语法消耗了，补上
+        if re.match(r'^[\u4e00-\u9fa5a-zA-Z]', content) and not content.startswith('#'):
+            content = '#' + content
+        return f'<p style="color: {colors["tag"]}; font-size: 14px; margin-top: 2em; line-height: 2;">' + content + '</p>'
+    html = re.sub(r'<h1>\s*([\s\S]*?)\s*</h1>', fix_h1_tag, html)
+    
+    # 2. 处理普通 p 段落中的标签
     for ptn, tag in [
         (r'(<p([^>]*)>)(#[^<]+)(</p>)', r'\1<span style="color: ' + colors['tag'] + r'; font-size: 14px;"' + r'>\3</span>\4'),
         (r'(<p([^>]*)>[^<]*)(#[\u4e00-\u9fa5\w]+)(</p>)', r'\1<span style="color: ' + colors['tag'] + r'; font-size: 14px;">' + r'\3</span>\4'),
     ]:
         html = re.sub(ptn, tag, html)
-    # 文末纯标签行：<p>#健康 #养生</p> 这种整行都是标签的，做大字体处理
-    # 匹配整个p内容都是#开头的标签的情况
-    tag_only = r'(<p([^>]*)>\s*)(#[^<#]+(?:\s+#[^<#]+)*)(\s*</p>)'
-    html = re.sub(
-        tag_only,
-        lambda m: m.group(1) + '<span style="color: ' + colors['tag'] + r'; font-size: 14px; line-height: 2;">' + m.group(3).strip() + '</span>' + m.group(4),
-        html
-    )
+    
+    # 3. 文末纯标签行：整个p都是标签，补上可能缺失的#
+    def fix_tag_only(m):
+        content = m.group(3).strip()
+        if re.match(r'^[\u4e00-\u9fa5a-zA-Z]', content) and not content.startswith('#'):
+            content = '#' + content
+        return m.group(1) + '<span style="color: ' + colors['tag'] + r'; font-size: 14px; line-height: 2;">' + content + '</span>' + m.group(4)
+    tag_only = r'(<p([^>]*)>\s*)([\S\s]*?)(\s*</p>)'
+    html = re.sub(tag_only, fix_tag_only, html)
+    
+    # 4. 最后兜底：处理 <p>#标签...</p> 这种格式
     html = re.sub(
         r'<p style="[^"]*">((?:\s*#(?:[\u4e00-\u9fa5\w])+)+)(?:\s*</p>)',
         lambda m: '<p style="color: ' + colors['tag'] + r'; font-size: 14px; margin-top: 2em; line-height: 2;">' + m.group(1).strip() + '</p>',
