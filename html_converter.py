@@ -11,10 +11,24 @@ def markdown_to_html(md_text, weekday):
     """Markdown 转 HTML，应用当天主题样式"""
     colors = get_style_for_weekday(weekday)
     
-    # 1. Markdown 转 HTML
+    # 0. 预处理：把 markdown 标题语法（`## xxx`、`### xxx` 等）转成 HTML 标签
+    # 这样解析时原始 # 不会被 markdown 吞掉
+    md_text = re.sub(r'^(#{1})(\s+)(.+)$',      r'<h1>\3</h1>',      md_text, flags=re.M)
+    md_text = re.sub(r'^(#{2})(\s+)(.+)$',      r'<h2>\3</h2>',      md_text, flags=re.M)
+    md_text = re.sub(r'^(#{3})(\s+)(.+)$',      r'<h3>\3</h3>',      md_text, flags=re.M)
+    md_text = re.sub(r'^(#{4})(\s+)(.+)$',     r'<h4>\3</h4>',      md_text, flags=re.M)
+    
+    # 1. Markdown 转 HTML（此时标题已是 HTML 标签，不再被解析为语法）
     html = markdown.markdown(md_text, extensions=['nl2br', 'sane_lists', 'fenced_code'])
     
     # 2. 应用样式
+    # H4 子子小节标题（h4不会被markdown标准解析器输出，但备用）
+    html = re.sub(
+        r'<h4>(.*?)</h4>',
+        f'<h4 style="margin: 1.2em 0 0.6em; font-size: 15px; font-weight: 600; color: {colors["heading"]};">\\1</h4>',
+        html
+    )
+    
     # H2 大章节标题（纯文本样式，无边框）
     html = re.sub(
         r'<h2>(.*?)</h2>',
@@ -63,17 +77,23 @@ def markdown_to_html(md_text, weekday):
         html
     )
     
-    # 处理话题标签（#话题标签），Markdown会把单独一行的 `#标签` 解析成 h1，此时第一个 # 被标题语法消耗掉
-    # 1. 处理 h1 误判：被误判为标题的标签行，h1内容是 `健康 #养生`（没有开头的#），需补上#
+    # 处理话题标签（#话题标签）
+    # 第一个 H1 → 文章标题（特殊样式）；其余 H1 → 标签段落（保留 #）
+    h1_count = [0]  # 用列表包装以便在内层函数中修改
     def fix_h1_tag(m):
         content = m.group(1).strip()
-        # 如果内容以标签字符（中文/英文）开头但没有 #，说明#被标题语法消耗了，补上
-        if re.match(r'^[\u4e00-\u9fa5a-zA-Z]', content) and not content.startswith('#'):
-            content = '#' + content
-        return f'<p style="color: {colors["tag"]}; font-size: 14px; margin-top: 2em; line-height: 2;">' + content + '</p>'
-    html = re.sub(r'<h1>\s*([\s\S]*?)\s*</h1>', fix_h1_tag, html)
+        h1_count[0] += 1
+        if h1_count[0] == 1:
+            # 第一个 H1 = 文章标题，正常显示
+            return f'<h1 style="font-size: 22px; font-weight: bold; color: {colors["heading"]}; text-align: center; margin-bottom: 0.8em; padding-bottom: 0.5em; border-bottom: 2px solid {colors["quote_border"]};">' + content + '</h1>'
+        else:
+            # 其余 H1 = 标签行，保留 # 显示为标签样式
+            if re.match(r'^[\u4e00-\u9fa5a-zA-Z]', content) and not content.startswith('#'):
+                content = '#' + content
+            return f'<p style="color: {colors["tag"]}; font-size: 14px; margin-top: 2em; line-height: 2;">' + content + '</p>'
+    html = re.sub(r'<h1>([\s\S]*?)</h1>', fix_h1_tag, html)
     
-    # 2. 处理普通 p 段落中的标签
+    # 3. 处理普通 p 段落中的标签
     for ptn, tag in [
         (r'(<p([^>]*)>)(#[^<]+)(</p>)', r'\1<span style="color: ' + colors['tag'] + r'; font-size: 14px;"' + r'>\3</span>\4'),
         (r'(<p([^>]*)>[^<]*)(#[\u4e00-\u9fa5\w]+)(</p>)', r'\1<span style="color: ' + colors['tag'] + r'; font-size: 14px;">' + r'\3</span>\4'),
