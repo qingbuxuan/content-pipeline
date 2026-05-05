@@ -230,7 +230,7 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
         
         # 安全提取 doc_token（防御：检查键是否存在）
         try:
-            doc_token = create_data["data"]["document"]["token"]
+            doc_token = create_data["data"]["document"]["document_id"]
         except (KeyError, TypeError) as e:
             log(f"[飞书] 解析 doc_token 失败: {e}，响应内容: {str(create_data)[:300]}")
             return None
