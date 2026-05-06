@@ -77,44 +77,74 @@ def markdown_to_html(md_text, weekday):
         html
     )
     
-    # 处理话题标签（#话题标签）
-    # 第一个 H1 → 文章标题（特殊样式）；其余 H1 → 标签段落（保留 #）
-    h1_count = [0]  # 用列表包装以便在内层函数中修改
+    # ========== 话题标签处理（重写） ==========
+    # 规则：
+    #   1. 第一个 H1 → 文章标题（居中大字）
+    #   2. 其余 H1 → 标签行（小字标签色，补#）
+    #   3. H2/H3 内的 #标签 → 标签色（只着色，不改标签结构）
+    #   4. <p> 内的 #标签 → 标签色
+    #   5. 文末纯标签行（<p>整行都是#标签）→ 标签段落样式
+    #   6. 绝不修改不含#的正常段落
+
+    # A. H1 处理：第一个为标题，其余为标签行
+    h1_count = [0]
     def fix_h1_tag(m):
         content = m.group(1).strip()
         h1_count[0] += 1
         if h1_count[0] == 1:
-            # 第一个 H1 = 文章标题，正常显示
             return f'<h1 style="font-size: 22px; font-weight: bold; color: {colors["heading"]}; text-align: center; margin-bottom: 0.8em; padding-bottom: 0.5em; border-bottom: 2px solid {colors["quote_border"]};">' + content + '</h1>'
         else:
-            # 其余 H1 = 标签行，保留 # 显示为标签样式
             if re.match(r'^[\u4e00-\u9fa5a-zA-Z]', content) and not content.startswith('#'):
                 content = '#' + content
             return f'<p style="color: {colors["tag"]}; font-size: 14px; margin-top: 2em; line-height: 2;">' + content + '</p>'
     html = re.sub(r'<h1>([\s\S]*?)</h1>', fix_h1_tag, html)
-    
-    # 3. 处理普通 p 段落中的标签
-    for ptn, tag in [
-        (r'(<p([^>]*)>)(#[^<]+)(</p>)', r'\1<span style="color: ' + colors['tag'] + r'; font-size: 14px;"' + r'>\3</span>\4'),
-        (r'(<p([^>]*)>[^<]*)(#[\u4e00-\u9fa5\w]+)(</p>)', r'\1<span style="color: ' + colors['tag'] + r'; font-size: 14px;">' + r'\3</span>\4'),
-    ]:
-        html = re.sub(ptn, tag, html)
-    
-    # 3. 文末纯标签行：整个p都是标签，补上可能缺失的#
-    def fix_tag_only(m):
-        content = m.group(3).strip()
-        if re.match(r'^[\u4e00-\u9fa5a-zA-Z]', content) and not content.startswith('#'):
-            content = '#' + content
-        return m.group(1) + '<span style="color: ' + colors['tag'] + r'; font-size: 14px; line-height: 2;">' + content + '</span>' + m.group(4)
-    tag_only = r'(<p([^>]*)>\s*)([\S\s]*?)(\s*</p>)'
-    html = re.sub(tag_only, fix_tag_only, html)
-    
-    # 4. 最后兜底：处理 <p>#标签...</p> 这种格式
-    html = re.sub(
-        r'<p style="[^"]*">((?:\s*#(?:[\u4e00-\u9fa5\w])+)+)(?:\s*</p>)',
-        lambda m: '<p style="color: ' + colors['tag'] + r'; font-size: 14px; margin-top: 2em; line-height: 2;">' + m.group(1).strip() + '</p>',
-        html
-    )
+
+    # B. H2/H3 内的 #标签 → 标签色（只着色，不改标签结构）
+    def color_hash_in_heading(tag_name):
+        def replacer(m):
+            inner = m.group(1)
+            # 给 #中文/英文 标签上色
+            colored = re.sub(
+                r'(#[\u4e00-\u9fa5a-zA-Z]\w*)',
+                f'<span style="color: {colors["tag"]}; font-size: 0.75em;">\\1</span>',
+                inner
+            )
+            if colored == inner:
+                return m.group(0)  # 没有#标签，原样返回
+            return f'<{tag_name}{m.group(2)}>{colored}</{tag_name}>'
+        return replacer
+    html = re.sub(r'<h2([^>]*)>(.*?)</h2>', color_hash_in_heading('h2'), html, flags=re.DOTALL)
+    html = re.sub(r'<h3([^>]*)>(.*?)</h3>', color_hash_in_heading('h3'), html, flags=re.DOTALL)
+
+    # C. <p> 内的 #标签着色（支持带 style 属性的 <p>）
+    # 匹配 <p...>#标签...</p> 的各种格式
+    tag_color = colors['tag']
+    tag_span = f'<span style="color: {tag_color}; font-size: 14px;">'
+
+    # C1. 整个 <p> 内容都是 #标签（纯标签行）
+    def fix_pure_tag_line(m):
+        content = m.group(1).strip()
+        # 确认内容确实全是 #标签（至少含一个#标签，其余也是#标签或空格）
+        if not re.match(r'^#[\u4e00-\u9fa5a-zA-Z]', content):
+            return m.group(0)  # 不以#标签开头，原样返回
+        return f'<p style="color: {tag_color}; font-size: 14px; margin-top: 2em; line-height: 2;">' + content + '</p>'
+    html = re.sub(r'<p[^>]*>((?:\s*#[\u4e00-\u9fa5a-zA-Z][\u4e00-\u9fa5\w]*(?:\s+|\s*</p>))+)', fix_pure_tag_line, html)
+
+    # C2. <p> 内中间/末尾的 #标签着色（不影响不含#的正常段落）
+    def color_tag_in_p(m):
+        inner = m.group(2)
+        if '#' not in inner:
+            return m.group(0)  # 无#，原样返回
+        # 只给 #标签 上色
+        colored = re.sub(
+            r'(#[\u4e00-\u9fa5a-zA-Z][\u4e00-\u9fa5\w]*)',
+            tag_span + r'\1</span>',
+            inner
+        )
+        if colored == inner:
+            return m.group(0)  # 没有#标签被着色
+        return f'<p{m.group(1)}>{colored}</p>'
+    html = re.sub(r'<p([^>]*)>(.*?)</p>', color_tag_in_p, html, flags=re.DOTALL)
     
     # 包装在白色卡片容器中
     wrapped_html = f'''<section style="background: white; border-radius: 8px; padding: 20px 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
