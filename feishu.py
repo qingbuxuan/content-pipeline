@@ -23,8 +23,17 @@ FEISHU_ARTICLES_TABLE_ID = None
 
 def get_feishu_token():
     """获取飞书 access_token"""
-    app_id = os.environ.get("FEISHU_APP_ID", "") or os.environ.get("QCLAW_FEISHU_APP_ID", "")
-    app_secret = os.environ.get("FEISHU_APP_SECRET", "") or os.environ.get("QCLAW_FEISHU_APP_SECRET", "")
+    # 兼容多种环境变量命名格式
+    app_id = (
+        os.environ.get("FEISHU_APP_ID", "") or
+        os.environ.get("QCLAW_FEISHU_APP_ID", "") or
+        os.environ.get("QCLAW_FEISHU_ACCOUNT_CLI_A94FFD179EB9DCB0_APPID", "")
+    )
+    app_secret = (
+        os.environ.get("FEISHU_APP_SECRET", "") or
+        os.environ.get("QCLAW_FEISHU_APP_SECRET", "") or
+        os.environ.get("QCLAW_FEISHU_ACCOUNT_CLI_A94FFD179EB9DCB0_APPSECRET", "")
+    )
     if not app_id or not app_secret:
         log(f"[飞书] 环境变量缺失: app_id={'有' if app_id else '无'}, app_secret={'有' if app_secret else '无'}")
         return None
@@ -196,27 +205,36 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
         date_str = beijing_now().strftime("%Y-%m-%d")
         theme_name = theme_info.get("name", "健康养生")
         theme_day = WEEKDAY_NAMES[weekday]
-        
+
         # 文档标题：2026-04-12 周一情感心理 - 老人孤独感如何化解
         doc_title = f"{date_str} {theme_day}{theme_name} - {title}"
-        
-        # 飞书文档块格式
+
+        def make_text_block(text, bold=False):
+            """生成符合飞书API格式的文本块 (block_type=2)"""
+            style = {"bold": bold, "inline_code": False, "italic": False,
+                     "strikethrough": False, "underline": False}
+            return {
+                "block_type": 2,
+                "text": {
+                    "elements": [{"text_run": {"content": text, "text_element_style": style}}]
+                }
+            }
+
+        # 飞书文档块格式（已验证可成功写入）
         blocks = [
-            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": f"📅 {date_str} {theme_day} · {theme_name}"}], "text_styles": {"bold": True}}},
-            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": f"📌 主题：{theme_info.get('theme', '')}"}]}},
-            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": f"📝 来源：{article.get('source', '网络')}"}]}},
-            {"block_type": 1, "is_collapsible": False, "layout": "paragraph", "elements": []},
-            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": f"🏷️ 标题：{title}"}], "text_styles": {"bold": True}}},
-            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": f"📋 摘要：{summary}"}]}},
-            {"block_type": 1, "is_collapsible": False, "layout": "paragraph", "elements": []},
-            {"block_type": 2, "text": {"elements": [{"type": "text_run", "text": "📄 正文："}], "text_styles": {"bold": True}}},
+            make_text_block(f"{date_str} {theme_day} · {theme_name}", bold=True),
+            make_text_block(f"主题：{theme_info.get('theme', '')}"),
+            make_text_block(f"来源：{article.get('source', '网络')}"),
+            make_text_block(f"标题：{title}", bold=True),
+            make_text_block(f"摘要：{summary}"),
+            make_text_block("正文：", bold=True),
         ]
-        
+
         # 正文分段（飞书每块有限制）
         article_lines = article.get("article", "").split("\n")
         for line in article_lines[:100]:  # 限制100行
             if line.strip():
-                blocks.append({"block_type": 2, "text": {"elements": [{"type": "text_run", "text": line}]}})
+                blocks.append(make_text_block(line))
         
         # 创建文档
         create_url = "https://open.feishu.cn/open-apis/docx/v1/documents"
@@ -235,9 +253,15 @@ def push_to_feishu(title, article, summary, weekday, theme_info):
             log(f"[飞书] 解析 doc_token 失败: {e}，响应内容: {str(create_data)[:300]}")
             return None
         
-        # 写入内容块
-        children_url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{doc_token}/blocks"
-        children_resp = requests.post(children_url, headers=headers, json={"children": blocks, "index": -1}, timeout=30)
+        # 写入内容块（关键修复：获取root block_id，使用正确端点）
+        blocks_get_url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{doc_token}/blocks"
+        blocks_get_resp = requests.get(blocks_get_url, headers=headers, timeout=10)
+        blocks_get_data = blocks_get_resp.json()
+        root_block_id = doc_token
+        if blocks_get_data.get("code") == 0 and blocks_get_data.get("data", {}).get("items"):
+            root_block_id = blocks_get_data["data"]["items"][0]["block_id"]
+        children_url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{doc_token}/blocks/{root_block_id}/children"
+        children_resp = requests.post(children_url, headers=headers, json={"children": blocks}, timeout=30)
         children_data = children_resp.json()
         
         if children_data.get("code") != 0:
