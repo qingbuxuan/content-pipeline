@@ -11,6 +11,11 @@ def markdown_to_html(md_text, weekday):
     tag_color = colors["tag"]
     tag_span = '<span style="color: ' + tag_color + ';">'
     
+    # ========== 步骤0：清洗常见标签前缀 ==========
+    # DeepSeek有时会输出"金句收尾："等前缀，自动去掉
+    md_text = re.sub(r'^金句收尾[：:：]\s*', '', md_text, flags=re.MULTILINE)
+    md_text = re.sub(r'^金句[：:：]\s*', '', md_text, flags=re.MULTILINE)
+    
     # ========== 步骤1：Markdown 转 HTML ==========
     # 文章用 ## 和 ### 做标题，# 只用于话题标签
     html = markdown.markdown(md_text, extensions=['nl2br', 'sane_lists', 'fenced_code'])
