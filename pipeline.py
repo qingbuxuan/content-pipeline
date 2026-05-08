@@ -350,8 +350,8 @@ def node6_send():
         # 文末预告（Markdown格式）
         preview_md = f"📅 明天 **「{next_banner.get('column', '')}」**：{next_banner.get('icon', '')} {WEEKDAY_NAMES[next_wk]} · {next_banner.get('slogan', '')}"
         
-        # 引导关注（Markdown引用格式）
-        about_md = "> " + ABOUT_TEXT.replace("\n\n", "\n\n> ")
+        # 引导关注（Markdown引用格式，用<br/>换行保持紧凑间距）
+        about_md = "> " + "<br/>".join(ABOUT_TEXT_LINES)
         
         # 完整Markdown文章
         article_full_md = f"{banner_md}\n\n{article}\n\n---\n\n{preview_md}\n\n{about_md}"
