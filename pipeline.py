@@ -5,7 +5,7 @@ from html_converter import *
 from utils import *
 from wechat import *
 from prompts import *
-from feishu import push_to_feishu
+from feishu import push_to_feishu, get_feishu_token, FEISHU_ARTICLES_TABLE_ID
 
 def get_weekday_theme():
     weekday = beijing_now().weekday()
@@ -20,7 +20,7 @@ def read_articles(weekday, limit=4):
         token = get_feishu_token()
         if not token:
             return ""
-        table_id = FEISHU_BITABLE_TABLE_ID
+        table_id = FEISHU_ARTICLES_TABLE_ID or "tbl5qTuoxo1nsE9l"
         weekday_name = WEEKDAY_NAMES[weekday]
         # Get records (filter in Python to avoid encoding issues)
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}/records"
@@ -302,11 +302,11 @@ def node6_send():
         log(f"[6] 读取数据失败: {e}")
         title, article, source, summary, cover_url, cover_prompt, theme_info, weekday = "健康养生文章", "内容", "网络", "", "", "", {}, 0
 
-    # 推送到飞书文档
-    feishu_url = push_to_feishu(title, article_data, summary, weekday, theme_info)
+    # 推送到飞书多维表格（正文+封面提示词直接存表格）
+    feishu_url = push_to_feishu(title, article_data, summary, weekday, theme_info, cover_prompt=cover_prompt)
     
     # Server酱推送（用 Markdown 格式）
-    feishu_line = f"📚 飞书文档：{feishu_url}\n" if feishu_url else ""
+    feishu_line = f"📚 飞书记录：{feishu_url}\n" if feishu_url else ""
     serverchan_content = f"""📝 新文章：
 
 📅 {WEEKDAY_NAMES[weekday]} · {theme_info.get('name', '健康养生')}

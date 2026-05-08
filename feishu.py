@@ -3,8 +3,7 @@
 飞书集成模块
 - 获取 access_token
 - 创建/管理多维表格
-- 写入文章记录
-- 创建飞书文档
+- 写入文章记录（正文+封面提示词直接存表格）
 """
 
 import os
@@ -100,10 +99,11 @@ def ensure_articles_table(token):
         ("主题", 3, {"options": [{"name": "情感心理"}, {"name": "养生生活"}, {"name": "慢病管理"}, {"name": "情绪养生"}, {"name": "生活品质"}, {"name": "科技健康"}, {"name": "科普急救"}]}),
         ("标题", 1, None),
         ("摘要", 1, None),
-        ("飞书文档", 15, None),
+        ("正文", 1, None),
+        ("封面提示词", 1, None),
+        ("素材来源", 1, None),
         ("微信状态", 3, {"options": [{"name": "草稿"}, {"name": "已发布"}, {"name": "未发"}]}),
         ("封面图", 15, None),
-        ("素材来源", 1, None),
     ]
     
     # 5. 创建缺失的字段
@@ -157,10 +157,11 @@ def write_article_record(token, table_id, record_data):
         "主题": record_data.get("theme", ""),
         "标题": record_data.get("title", ""),
         "摘要": record_data.get("summary", ""),
-        "飞书文档": {"link": record_data.get("doc_url", ""), "text": "打开文档"},
+        "正文": record_data.get("article", ""),
+        "封面提示词": record_data.get("cover_prompt", ""),
+        "素材来源": record_data.get("source", "网络"),
         "微信状态": "草稿",
         "封面图": {"link": record_data.get("cover_url", ""), "text": "封面"},
-        "素材来源": record_data.get("source", "网络"),
     }
 
     # 3. 用实际字段名构造写入数据
@@ -193,109 +194,46 @@ def write_article_record(token, table_id, record_data):
     return data.get("data", {}).get("record", {}).get("record_id")
 
 
-def push_to_feishu(title, article, summary, weekday, theme_info):
-    """推送到飞书文档 + 多维表格"""
+def push_to_feishu(title, article_data, summary, weekday, theme_info, cover_prompt=""):
+    """推送到飞书多维表格（正文+封面提示词直接存表格，不再创建飞书文档）"""
     try:
         # 获取 access_token
         access_token = get_feishu_token()
         if not access_token:
             return None
         
-        # 构造文档内容（飞书 JSON 格式）
         date_str = beijing_now().strftime("%Y-%m-%d")
         theme_name = theme_info.get("name", "健康养生")
         theme_day = WEEKDAY_NAMES[weekday]
 
-        # 文档标题：2026-04-12 周一情感心理 - 老人孤独感如何化解
-        doc_title = f"{date_str} {theme_day}{theme_name} - {title}"
-
-        def make_text_block(text, bold=False):
-            """生成符合飞书API格式的文本块 (block_type=2)"""
-            style = {"bold": bold, "inline_code": False, "italic": False,
-                     "strikethrough": False, "underline": False}
-            return {
-                "block_type": 2,
-                "text": {
-                    "elements": [{"text_run": {"content": text, "text_element_style": style}}]
-                }
-            }
-
-        # 飞书文档块格式（已验证可成功写入）
-        blocks = [
-            make_text_block(f"{date_str} {theme_day} · {theme_name}", bold=True),
-            make_text_block(f"主题：{theme_info.get('theme', '')}"),
-            make_text_block(f"来源：{article.get('source', '网络')}"),
-            make_text_block(f"标题：{title}", bold=True),
-            make_text_block(f"摘要：{summary}"),
-            make_text_block("正文：", bold=True),
-        ]
-
-        # 正文分段（飞书每块有限制）
-        article_lines = article.get("article", "").split("\n")
-        for line in article_lines[:100]:  # 限制100行
-            if line.strip():
-                blocks.append(make_text_block(line))
-        
-        # 创建文档
-        create_url = "https://open.feishu.cn/open-apis/docx/v1/documents"
-        headers = {"Authorization": f"Bearer {access_token}"}
-        create_resp = requests.post(create_url, headers=headers, json={"document_id": "", "title": doc_title}, timeout=10)
-        create_data = create_resp.json()
-        
-        if create_data.get("code") != 0:
-            log(f"[飞书] 创建文档失败: {create_data}")
-            return None
-        
-        # 安全提取 doc_token（防御：检查键是否存在）
-        try:
-            doc_token = create_data["data"]["document"]["document_id"]
-        except (KeyError, TypeError) as e:
-            log(f"[飞书] 解析 doc_token 失败: {e}，响应内容: {str(create_data)[:300]}")
-            return None
-        
-        # 写入内容块（关键修复：获取root block_id，使用正确端点）
-        blocks_get_url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{doc_token}/blocks"
-        blocks_get_resp = requests.get(blocks_get_url, headers=headers, timeout=10)
-        blocks_get_data = blocks_get_resp.json()
-        root_block_id = doc_token
-        if blocks_get_data.get("code") == 0 and blocks_get_data.get("data", {}).get("items"):
-            root_block_id = blocks_get_data["data"]["items"][0]["block_id"]
-        children_url = f"https://open.feishu.cn/open-apis/docx/v1/documents/{doc_token}/blocks/{root_block_id}/children"
-        children_resp = requests.post(children_url, headers=headers, json={"children": blocks}, timeout=30)
-        children_data = children_resp.json()
-        
-        if children_data.get("code") != 0:
-            log(f"[飞书] 写入内容失败: {children_data}")
-            # 继续尝试写表
-        else:
-            log(f"[飞书] 文档内容写入成功")
-        
-        # 生成分享链接
-        share_url = f"https://feishu.cn/docx/{doc_token}"
-        log(f"[飞书] 文档已创建: {share_url}")
-        
         # 写入多维表格
         log(f"[飞书] 开始写入多维表格...")
         table_id = ensure_articles_table(access_token)
         log(f"[飞书] 获取到表ID: {table_id}")
-        if table_id:
-            record_data = {
-                "date": int(time.time()),
-                "weekday": theme_day,
-                "theme": theme_info.get("name", ""),
-                "title": title,
-                "summary": summary,
-                "doc_url": share_url,
-                "cover_url": article.get("cover_url", ""),
-                "source": article.get("source", "网络"),
-            }
-            log(f"[飞书] 准备写入记录: {record_data}")
-            record_id = write_article_record(access_token, table_id, record_data)
-            log(f"[飞书] 记录写入结果: {record_id}")
-        else:
+        if not table_id:
             log(f"[飞书] 未获取到表ID，跳过写表")
-        
-        return share_url
+            return None
+
+        record_data = {
+            "date": int(time.time()),
+            "weekday": theme_day,
+            "theme": theme_info.get("name", ""),
+            "title": title,
+            "summary": summary,
+            "article": article_data.get("article", ""),
+            "cover_prompt": cover_prompt,
+            "cover_url": article_data.get("cover_url", ""),
+            "source": article_data.get("source", "网络"),
+        }
+        log(f"[飞书] 准备写入记录: 标题={title}, 正文={len(record_data['article'])}字, 封面提示词={len(cover_prompt)}字")
+        record_id = write_article_record(access_token, table_id, record_data)
+        log(f"[飞书] 记录写入结果: {record_id}")
+
+        if record_id:
+            bitable_url = f"https://feishu.cn/base/{FEISHU_BITABLE_TOKEN}/table/{table_id}/record/{record_id}"
+            log(f"[飞书] 记录已创建: {bitable_url}")
+            return bitable_url
+        return None
         
     except Exception as e:
         import traceback
