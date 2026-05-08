@@ -9,16 +9,61 @@ def get_style_for_weekday(weekday):
 def markdown_to_html(md_text, weekday):
     colors = get_style_for_weekday(weekday)
     tag_color = colors["tag"]
-    tag_span = '<span style="color: ' + tag_color + ';">'
     
     # ========== 步骤0：清洗常见标签前缀 ==========
     # DeepSeek有时会输出"金句收尾："等前缀，自动去掉
     md_text = re.sub(r'^金句收尾[：:：]\s*', '', md_text, flags=re.MULTILINE)
     md_text = re.sub(r'^金句[：:：]\s*', '', md_text, flags=re.MULTILINE)
     
+    # ========== 步骤0.5：保护话题标签的 # 号 ==========
+    # 微信公众号需要纯文本 #话题标签 才能自动识别为蓝色可点击标签
+    # 必须在 Markdown 解析前保护 #，否则 Python-Markdown 会把 #健康 解析为 H1
+    #
+    # 策略：将话题标签行的 # 替换为占位符，让 Markdown 不识别为标题
+    # 解析后再把占位符还原为 #，并给标签行加微信可识别的样式
+    
+    TAG_HASH = 'HASHTAGPROTECT'
+    
+    # 匹配：整行都是话题标签（#后紧跟汉字/字母/数字，空格分隔多个标签）
+    # 例如：#养生 #健康生活 #中年人
+    # 不匹配：# 标题（#后有空格）、## 标题、### 标题
+    # 只替换行首的 #（即话题标签的 #），保留行内 # 不动
+    
+    def protect_hash(m):
+        return TAG_HASH + m.group(1)
+    
+    # 逐行处理：找到整行都是话题标签的行，替换其中的 #
+    lines = md_text.split('\n')
+    new_lines = []
+    for line in lines:
+        stripped = line.strip()
+        # 检测：整行是否全是话题标签（#汉字/字母/数字 空格分隔）
+        if re.match(r'^#[\u4e00-\u9fa5a-zA-Z0-9]+(?:\s+#[\u4e00-\u9fa5a-zA-Z0-9]+)*$', stripped):
+            # 替换所有 # 为占位符
+            protected = re.sub(r'#', TAG_HASH, stripped)
+            new_lines.append(protected)
+        else:
+            new_lines.append(line)
+    md_text = '\n'.join(new_lines)
+    
     # ========== 步骤1：Markdown 转 HTML ==========
-    # 文章用 ## 和 ### 做标题，# 只用于话题标签
     html = markdown.markdown(md_text, extensions=['nl2br', 'sane_lists', 'fenced_code'])
+    
+    # ========== 步骤1.5：还原话题标签 ==========
+    # 找到包含占位符的 <p> 元素，还原 # 并加微信可识别样式
+    # 微信 API 需要纯文本 #话题标签（不包裹在 span 中）才能自动识别为蓝色可点击标签
+    def restore_tag_paragraph(m):
+        content = m.group(1)
+        # 还原占位符为 #
+        content = content.replace(TAG_HASH, '#')
+        return ('<p style="color: ' + tag_color + '; font-size: 14px; '
+                + 'margin-top: 2em; line-height: 2;">' + content + '</p>')
+    
+    html = re.sub(
+        r'<p>(' + TAG_HASH + r'.*?)</p>',
+        restore_tag_paragraph,
+        html
+    )
     
     # ========== 步骤2：应用样式 ==========
     # H4
@@ -39,19 +84,7 @@ def markdown_to_html(md_text, weekday):
         '<h3 style="margin: 1.5em 0 0.8em; font-size: 17px; font-weight: 600; color: ' + colors["heading"] + ';">\\1</h3>',
         html
     )
-    # 第一个 H1 → 文章标题（只有当 H1 内容有实质文字时才作为标题）
-    h1_matches = list(re.finditer(r'<h1>(.*?)</h1>', html))
-    if h1_matches:
-        first = h1_matches[0]
-        content = first.group(1).strip()
-        # 如果第一个 H1 是标签行（只有 #汉字），则不作为标题处理
-        if content and not re.match(r'^(?:#[\u4e00-\u9fa5]+\s*)+$', content):
-            title_html = ('<h1 style="font-size: 22px; font-weight: bold; color: ' + colors["heading"]
-                          + '; text-align: center; margin-bottom: 0.8em; padding-bottom: 0.5em; '
-                          + 'border-bottom: 2px solid ' + colors["quote_border"] + ';">'
-                          + content + '</h1>')
-            html = html[:first.start()] + title_html + html[first.end():]
-    # 段落
+    # 段落（匹配无 style 的 <p>，不会匹配已有 style 的话题标签段落）
     html = re.sub(
         r'<p>(.*?)</p>',
         '<p style="margin: 1.2em 0; line-height: 1.9; color: ' + colors["text"] + '; font-size: 16px;">\\1</p>',
@@ -74,26 +107,7 @@ def markdown_to_html(md_text, weekday):
     html = re.sub(r'<ul>', '<ul style="padding-left: 2em; line-height: 2.2; color: ' + colors["text"] + ';">', html)
     html = re.sub(r'<ol>', '<ol style="padding-left: 2em; line-height: 2.2; color: ' + colors["text"] + ';">', html)
     
-    # ========== 步骤3：话题标签处理 ==========
-    # 标签行特征：H1 内容以 # 开头（Markdown 把 "# #健康 #养生" 解析成 H1）
-    # 将这种 H1 转为标签段落样式
-    
-    def fix_h1_tag(m):
-        content = m.group(1)
-        # 判断是否是标签行（H1 内容以 # 开头）
-        if content.startswith('#'):
-            # 提取标签（#后紧跟全汉字）
-            tags = re.findall(r'#[\u4e00-\u9fa5]+', content)
-            if tags:
-                colored = ''.join([tag_span + t + '</span>' for t in tags])
-                return ('<p style="color: ' + tag_color + '; font-size: 14px; '
-                        + 'margin-top: 2em; line-height: 2;">' + colored + '</p>')
-        # 不是标签行，返回原样
-        return m.group(0)
-    
-    html = re.sub(r'<h1>(.*?)</h1>', fix_h1_tag, html)
-    
-    # ========== 步骤4：包装容器 ==========
+    # ========== 步骤3：包装容器 ==========
     wrapped = ('<section style="background: white; border-radius: 8px; padding: 20px 15px; '
                + 'box-shadow: 0 2px 8px rgba(0,0,0,0.08);">\n' + html + '\n</section>')
     
