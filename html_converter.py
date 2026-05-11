@@ -8,7 +8,6 @@ def get_style_for_weekday(weekday):
 
 def markdown_to_html(md_text, weekday):
     colors = get_style_for_weekday(weekday)
-    tag_color = colors["tag"]
     
     # ========== 步骤0：清洗常见标签前缀 ==========
     # DeepSeek有时会输出"金句收尾："等前缀，自动去掉
@@ -56,8 +55,7 @@ def markdown_to_html(md_text, weekday):
         content = m.group(1)
         # 还原占位符为 #
         content = content.replace(TAG_HASH, '#')
-        return ('<p style="color: ' + tag_color + '; font-size: 14px; '
-                + 'margin-top: 2em; line-height: 2;">' + content + '</p>')
+        return '<p style="font-size: 14px; margin-top: 2em; line-height: 2;">' + content + '</p>'
     
     html = re.sub(
         r'<p>(' + TAG_HASH + r'.*?)</p>',
