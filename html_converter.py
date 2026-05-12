@@ -10,35 +10,20 @@ def markdown_to_html(md_text, weekday):
     colors = get_style_for_weekday(weekday)
     
     # ========== 步骤0：清洗常见标签前缀 ==========
-    # DeepSeek有时会输出"金句收尾："等前缀，自动去掉
     md_text = re.sub(r'^金句收尾[：:：]\s*', '', md_text, flags=re.MULTILINE)
     md_text = re.sub(r'^金句[：:：]\s*', '', md_text, flags=re.MULTILINE)
     
     # ========== 步骤0.5：保护话题标签的 # 号 ==========
-    # 微信公众号需要纯文本 #话题标签 才能自动识别为蓝色可点击标签
-    # 必须在 Markdown 解析前保护 #，否则 Python-Markdown 会把 #健康 解析为 H1
-    #
-    # 策略：将话题标签行的 # 替换为占位符，让 Markdown 不识别为标题
-    # 解析后再把占位符还原为 #，并给标签行加微信可识别的样式
-    
     TAG_HASH = 'HASHTAGPROTECT'
-    
-    # 匹配：整行都是话题标签（#后紧跟汉字/字母/数字，空格分隔多个标签）
-    # 例如：#养生 #健康生活 #中年人
-    # 不匹配：# 标题（#后有空格）、## 标题、### 标题
-    # 只替换行首的 #（即话题标签的 #），保留行内 # 不动
     
     def protect_hash(m):
         return TAG_HASH + m.group(1)
     
-    # 逐行处理：找到整行都是话题标签的行，替换其中的 #
     lines = md_text.split('\n')
     new_lines = []
     for line in lines:
         stripped = line.strip()
-        # 检测：整行是否全是话题标签（#汉字/字母/数字 空格分隔）
         if re.match(r'^#[\u4e00-\u9fa5a-zA-Z0-9]+(?:\s+#[\u4e00-\u9fa5a-zA-Z0-9]+)*$', stripped):
-            # 替换所有 # 为占位符
             protected = re.sub(r'#', TAG_HASH, stripped)
             new_lines.append(protected)
         else:
@@ -48,14 +33,11 @@ def markdown_to_html(md_text, weekday):
     # ========== 步骤1：Markdown 转 HTML ==========
     html = markdown.markdown(md_text, extensions=['nl2br', 'sane_lists', 'fenced_code'])
     
-    # ========== 步骤1.5：还原话题标签 ==========
-    # 找到包含占位符的 <p> 元素，还原 # 并加微信可识别样式
-    # 微信 API 需要纯文本 #话题标签（不包裹在 span 中）才能自动识别为蓝色可点击标签
+    # ========== 步骤1.5：还原话题标签（无 color）==========
     def restore_tag_paragraph(m):
-        content = m.group(1)
-        # 还原占位符为 #
-        content = content.replace(TAG_HASH, '#')
-        return '<p style="font-size: 14px; margin-top: 2em; line-height: 2;">' + content + '</p>'
+        content_inner = m.group(1)
+        content_inner = content_inner.replace(TAG_HASH, '#')
+        return '<p style="font-size: 14px; margin-top: 2em; line-height: 2;">' + content_inner + '</p>'
     
     html = re.sub(
         r'<p>(' + TAG_HASH + r'.*?)</p>',
@@ -82,12 +64,8 @@ def markdown_to_html(md_text, weekday):
         '<h3 style="margin: 1.5em 0 0.8em; font-size: 17px; font-weight: 600; color: ' + colors["heading"] + ';">\\1</h3>',
         html
     )
-    # 段落（匹配无 style 的 <p>，不会匹配已有 style 的话题标签段落）
-    html = re.sub(
-        r'<p>(.*?)</p>',
-        '<p style="margin: 1.2em 0; line-height: 1.9; color: ' + colors["text"] + '; font-size: 16px;">\\1</p>',
-        html
-    )
+    # 段落：只用字符串替换 <p> 为 <p style=...>（不影响已带 style 的 <p>）
+    html = html.replace('<p>', '<p style="margin: 1.2em 0; line-height: 1.9; color: ' + colors["text"] + '; font-size: 16px;">')
     # 加粗
     html = re.sub(
         r'<strong>(.*?)</strong>',
