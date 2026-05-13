@@ -33,11 +33,11 @@ def markdown_to_html(md_text, weekday):
     # ========== 步骤1：Markdown 转 HTML ==========
     html = markdown.markdown(md_text, extensions=['nl2br', 'sane_lists', 'fenced_code'])
     
-    # ========== 步骤1.5：还原话题标签（无 color）==========
+    # ========== 步骤1.5：还原话题标签（无 inline style）==========
     def restore_tag_paragraph(m):
         content_inner = m.group(1)
         content_inner = content_inner.replace(TAG_HASH, '#')
-        return '<p style="font-size: 14px; margin-top: 2em; line-height: 2;">' + content_inner + '</p>'
+        return '<p>' + content_inner + '</p>'
     
     html = re.sub(
         r'<p>(' + TAG_HASH + r'.*?)</p>',
