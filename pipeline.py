@@ -6,6 +6,7 @@ from utils import *
 from wechat import *
 from prompts import *
 from feishu import push_to_feishu, get_feishu_token, FEISHU_ARTICLES_TABLE_ID
+from collectors2 import collect_enhanced_materials
 
 def get_weekday_theme():
     weekday = beijing_now().weekday()
@@ -143,12 +144,22 @@ def node2_title():
     hot_topics = "\n".join([f"- {i['title']}" for i in items])
     theme_ctx = f"\n\n今日主题「{theme_info.get('name','')}」：{theme_info.get('theme','')}\n方向：{theme_info.get('direction','')}"
     season_ctx = f"\n\n【当前季节】：{season}\n{season_info.get('guidance', '')}\n{season_info.get('avoid', '')}"
+    # 扩展素材采集（节气养生+食材知识+健康小贴士）
+    try:
+        enhanced = collect_enhanced_materials()
+        with open(f"{DATA_DIR}/enhanced.json", "w", encoding="utf-8") as f:
+            json.dump({"enhanced": enhanced}, f, ensure_ascii=False)
+        enhanced_ctx = f"\n\n{enhanced}" if enhanced else ""
+    except Exception as e:
+        log(f"[扩展素材] 采集失败: {e}")
+        enhanced_ctx = ""
     
     # 生成标题提示词：明确字数限制
     prompt = f"""## 热榜话题
 {hot_topics}
 {theme_ctx}
 {season_ctx}
+{enhanced_ctx}
 
 ## 标题生成要求
 生成 5 个微信公众号爆款标题候选，然后选择最优的一个作为最终标题。
@@ -229,7 +240,16 @@ def node3_outline():
         season, season_info = get_season_info()
     theme_ctx = f"\n\n今日主题「{theme_info.get('name','')}」：{theme_info.get('theme','')}"
     season_ctx = f"\n\n【当前季节】：{season}\n{season_info.get('guidance', '')}\n内容必须符合{season}特点，{season_info.get('avoid', '')}"
-    prompt = f"## 标题：{title}\n## 来源：{source}热榜{theme_ctx}\n{season_ctx}\n\n输出【目标读者】【核心金句】【文章结构】【小标题】"
+    # 读取扩展素材
+    enhanced_ctx = ""
+    try:
+        with open(f"{DATA_DIR}/enhanced.json", encoding="utf-8") as f:
+            enhanced_data = json.load(f)
+            if enhanced_data.get("enhanced"):
+                enhanced_ctx = f"\n\n{enhanced_data['enhanced']}"
+    except:
+        pass
+    prompt = f"## 标题：{title}\n## 来源：{source}热榜{theme_ctx}\n{season_ctx}\n{enhanced_ctx}\n\n输出【目标读者】【核心金句】【文章结构】【小标题】"
     log("[3] 生成大纲...")
     result = call_deepseek(prompt, THREE_HOOKS_SYSTEM, 0.7)
     with open(f"{DATA_DIR}/outline.json", "w", encoding="utf-8") as f:
@@ -253,13 +273,23 @@ def node4_article():
         hist_prompt = f"\n\n参考：\n{hist}\n" if hist else ""
         season, season_info = get_season_info()
         season_ctx = f"【当前季节】：{season}\n{season_info.get('guidance', '')}\n内容必须符合{season}特点，{season_info.get('avoid', '')}"
+        # 读取扩展素材
+        enhanced_ctx = ""
+        try:
+            with open(f"{DATA_DIR}/enhanced.json", encoding="utf-8") as f:
+                enhanced_data = json.load(f)
+                if enhanced_data.get("enhanced"):
+                    enhanced_ctx = f"\n\n{enhanced_data['enhanced']}"
+        except:
+            pass
     except:
         title, outline, source = "健康养生", "", "网络"
         hist_prompt = ""
         season, season_info = get_season_info()
         season_ctx = f"【当前季节】：{season}\n{season_info.get('guidance', '')}\n内容必须符合{season}特点，{season_info.get('avoid', '')}"
+        enhanced_ctx = ""
     log("[4] 生成正文(Markdown格式)...")
-    result = call_deepseek(THREE_HOOKS_ARTICLE_PROMPT.format(title=title, outline=outline[:2000] or "基础大纲", season_ctx=season_ctx) + hist_prompt,
+    result = call_deepseek(THREE_HOOKS_ARTICLE_PROMPT.format(title=title, outline=outline[:2000] or "基础大纲", season_ctx=season_ctx) + hist_prompt + enhanced_ctx,
                            THREE_HOOKS_SYSTEM, 0.8, 3000)
     article = result or f"【{title}】这是一篇健康养生文章。\n\n#健康 #养生"
     with open(f"{DATA_DIR}/article.json", "w", encoding="utf-8") as f:

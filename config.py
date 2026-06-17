@@ -180,3 +180,4 @@ KEYWORDS = ["健康", "养生", "中医", "运动", "睡眠", "心理", "情感"
 
 FEISHU_BITABLE_TOKEN = "THaEbbUfWak0d2sVpCbcXW4Dnfe"
 FEISHU_ARTICLES_TABLE_ID = None  # feishu.py 运行时动态更新
+ISTEREO_TOKEN = os.environ.get("ISTEREO_TOKEN", "")
