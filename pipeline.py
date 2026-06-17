@@ -133,6 +133,7 @@ def truncate_title_smart(title, max_bytes=60):
 def node2_title():
     """生成标题：要求 15-22 字（45-66 字节），确保完整可读"""
     weekday, theme_info = get_weekday_theme()
+    season, season_info = get_season_info()
     try:
         with open(f"{DATA_DIR}/candidates.json", encoding="utf-8") as f:
             data = json.load(f)
@@ -141,11 +142,13 @@ def node2_title():
         items = [{"title": "健康养生"}]
     hot_topics = "\n".join([f"- {i['title']}" for i in items])
     theme_ctx = f"\n\n今日主题「{theme_info.get('name','')}」：{theme_info.get('theme','')}\n方向：{theme_info.get('direction','')}"
+    season_ctx = f"\n\n【当前季节】：{season}\n{season_info.get('guidance', '')}\n{season_info.get('avoid', '')}"
     
     # 生成标题提示词：明确字数限制
     prompt = f"""## 热榜话题
 {hot_topics}
 {theme_ctx}
+{season_ctx}
 
 ## 标题生成要求
 生成 5 个微信公众号爆款标题候选，然后选择最优的一个作为最终标题。
@@ -220,10 +223,13 @@ def node3_outline():
         title = title_data["title"]
         source = cand_data.get("items", [{}])[0].get("source", "网络")
         theme_info = title_data.get("theme", {})
+        season, season_info = get_season_info()
     except:
         title, source, theme_info = "健康养生", "网络", {}
+        season, season_info = get_season_info()
     theme_ctx = f"\n\n今日主题「{theme_info.get('name','')}」：{theme_info.get('theme','')}"
-    prompt = f"## 标题：{title}\n## 来源：{source}热榜{theme_ctx}\n\n输出【目标读者】【核心金句】【文章结构】【小标题】"
+    season_ctx = f"\n\n【当前季节】：{season}\n{season_info.get('guidance', '')}\n内容必须符合{season}特点，{season_info.get('avoid', '')}"
+    prompt = f"## 标题：{title}\n## 来源：{source}热榜{theme_ctx}\n{season_ctx}\n\n输出【目标读者】【核心金句】【文章结构】【小标题】"
     log("[3] 生成大纲...")
     result = call_deepseek(prompt, THREE_HOOKS_SYSTEM, 0.7)
     with open(f"{DATA_DIR}/outline.json", "w", encoding="utf-8") as f:
@@ -245,11 +251,15 @@ def node4_article():
         weekday = title_data.get("weekday", beijing_now().weekday())
         hist = read_articles(weekday, limit=4)
         hist_prompt = f"\n\n参考：\n{hist}\n" if hist else ""
+        season, season_info = get_season_info()
+        season_ctx = f"【当前季节】：{season}\n{season_info.get('guidance', '')}\n内容必须符合{season}特点，{season_info.get('avoid', '')}"
     except:
         title, outline, source = "健康养生", "", "网络"
         hist_prompt = ""
+        season, season_info = get_season_info()
+        season_ctx = f"【当前季节】：{season}\n{season_info.get('guidance', '')}\n内容必须符合{season}特点，{season_info.get('avoid', '')}"
     log("[4] 生成正文(Markdown格式)...")
-    result = call_deepseek(THREE_HOOKS_ARTICLE_PROMPT.format(title=title, outline=outline[:2000] or "基础大纲") + hist_prompt,
+    result = call_deepseek(THREE_HOOKS_ARTICLE_PROMPT.format(title=title, outline=outline[:2000] or "基础大纲", season_ctx=season_ctx) + hist_prompt,
                            THREE_HOOKS_SYSTEM, 0.8, 3000)
     article = result or f"【{title}】这是一篇健康养生文章。\n\n#健康 #养生"
     with open(f"{DATA_DIR}/article.json", "w", encoding="utf-8") as f:

@@ -7,6 +7,8 @@ THREE_HOOKS_SYSTEM = '你是一位顶级微信公众号爆款文章写作大师�
 THREE_HOOKS_ARTICLE_PROMPT = """## 任务
 根据以下大纲，写一篇微信公众号爆款文章。
 
+{season_ctx}
+
 ## 标题
 {title}
 
