@@ -17,37 +17,48 @@ def get_weekday_theme():
 def read_articles(weekday, limit=4):
     """从飞书读取最近几周同主题文章"""
     from datetime import timedelta
+    weekday_name = WEEKDAY_NAMES[weekday]
+    log(f"[防重复] 开始读取 {weekday_name} 历史文章（limit={limit}）")
     try:
         token = get_feishu_token()
         if not token:
+            log("[防重复] 飞书token获取失败，跳过")
             return ""
         table_id = FEISHU_ARTICLES_TABLE_ID or "tbl5qTuoxo1nsE9l"
-        weekday_name = WEEKDAY_NAMES[weekday]
         # Get records (filter in Python to avoid encoding issues)
         url = f"https://open.feishu.cn/open-apis/bitable/v1/apps/{FEISHU_BITABLE_TOKEN}/tables/{table_id}/records"
         resp = requests.get(url, headers={"Authorization": f"Bearer {token}"}, timeout=15)
         data = resp.json()
         if data.get("code") != 0:
+            log(f"[防重复] API返回错误: code={data.get('code')}, msg={data.get('msg', 'unknown')}")
             return ""
         items = data.get("data", {}).get("items", [])
+        log(f"[防重复] Bitable总记录数: {len(items)}")
         if not items:
+            log("[防重复] Bitable无记录")
             return ""
         # Filter by weekday in Python
         articles = []
+        matched_count = 0
         for item in items:
             fields = item.get("fields", {})
             wk = fields.get("星期", "")
             if wk == weekday_name:
+                matched_count += 1
                 body = fields.get("正文", "") or ""
                 if body and len(body) > 50:
                     articles.append(body[:500])
-        return "\n\n".join(articles[:limit])
+                    log(f"[防重复] 匹配到文章 {len(articles)}: 正文{len(body)}字")
+        log(f"[防重复] {weekday_name}匹配{matched_count}条，有效正文{len(articles)}条")
+        if not articles:
+            log("[防重复] 无有效历史文章")
+            return ""
+        result = "\n\n".join(articles[:limit])
+        log(f"[防重复] 返回历史文章 {len(articles[:limit])} 篇，共{len(result)}字")
+        return result
     except Exception as e:
         log(f"[防重复] 读取失败: {e}")
         return ""
-
-    log(f"[主题] 今天{WEEKDAY_NAMES[weekday]} · {theme_info['name']} · {theme_info['theme']}")
-    return weekday, theme_info
 
 def score_item(title, theme_keywords=None):
     score = 0
@@ -271,6 +282,10 @@ def node4_article():
         weekday = title_data.get("weekday", beijing_now().weekday())
         hist = read_articles(weekday, limit=4)
         hist_prompt = f"\n\n参考：\n{hist}\n" if hist else ""
+        if hist:
+            log(f"[4] 防重复注入: 读取到{len(hist)}字历史文章")
+        else:
+            log("[4] 防重复注入: 无历史文章")
         season, season_info = get_season_info()
         season_ctx = f"【当前季节】：{season}\n{season_info.get('guidance', '')}\n内容必须符合{season}特点，{season_info.get('avoid', '')}"
         # 读取扩展素材
